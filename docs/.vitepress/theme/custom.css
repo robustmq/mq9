@@ -157,10 +157,12 @@ div[class*='language-'] code {
 /* ─── Home page layout overrides ─────────────────────────────── */
 .VPHome {
   padding-bottom: 0 !important;
+  padding-top: 0 !important;
 }
 
 /* Hide default VitePress home hero when using custom */
 .VPHero {
   display: none;
 }
+
 

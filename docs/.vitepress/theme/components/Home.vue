@@ -1,422 +1,618 @@
 <template>
   <div class="home">
 
-    <!-- Hero -->
-    <section class="hero">
-      <h1 class="title">MQ9</h1>
-      <p class="subtitle">A mailbox protocol for AI Agents.</p>
-      <p class="desc">
-        Agents go offline. Messages get lost. mq9 gives every Agent a persistent inbox —
-        send anytime, receive when ready. Built on NATS. No new SDK.
-      </p>
-    </section>
+    <!-- Hero + Protocol side by side -->
+    <div class="top-row">
+
+      <section class="hero">
+        <div class="hero-eyebrow">single binary · built on NATS · no new SDK</div>
+        <h1 class="hero-title">mq9</h1>
+        <p class="hero-sub">Async messaging infrastructure for AI Agents.</p>
+        <p class="hero-desc">
+          Agents are ephemeral — they go offline, restart, disappear.<br>
+          mq9 is the messaging layer that keeps them connected.<br>
+          Point-to-point delivery. Broadcast. Offline recovery.<br>
+          One binary. Any NATS client. No coordination overhead.
+        </p>
+      </section>
+
+      <section class="protocol">
+        <div class="protocol-label">— four subjects, complete API —</div>
+        <pre class="protocol-block"><span class="cmd-comment"># create a mailbox</span>
+<span class="cmd-subject">$mq9.AI.MAILBOX.CREATE</span>
+
+<span class="cmd-comment"># send to an agent (offline? stored, delivered on reconnect)</span>
+<span class="cmd-subject">$mq9.AI.INBOX.<span class="cmd-var">{mail_id}</span>.<span class="cmd-var">{priority}</span></span>
+
+<span class="cmd-comment"># broadcast to all subscribers</span>
+<span class="cmd-subject">$mq9.AI.BROADCAST.<span class="cmd-var">{domain}</span>.<span class="cmd-var">{event}</span></span>
+
+<span class="cmd-comment"># pull missed messages after reconnect</span>
+<span class="cmd-subject">$mq9.AI.MAILBOX.QUERY.<span class="cmd-var">{mail_id}</span></span></pre>
+        <div class="protocol-note">Go, Python, Rust, JavaScript — any NATS client is already an mq9 client.</div>
+      </section>
+
+    </div>
 
     <!-- Diagram -->
-    <section class="diagram">
+    <section class="diagram-section">
+      <div class="diagram-label">— how it works —</div>
+      <div class="diagram">
 
-      <!-- Row 1: point-to-point -->
-      <div class="diag-row">
-        <div class="diag-label">Inbox</div>
-        <div class="diag-content p2p">
-          <div class="ag ag-blue">
-            <div class="ag-dot online"></div>
+        <!-- Left agents -->
+        <div class="agent-group">
+          <div class="agent">
+            <div class="agent-dot online"></div>
             <span>Agent A</span>
           </div>
-          <div class="edge">
-            <div class="edge-line solid blue"></div>
-            <div class="edge-text">INBOX.m‑001.urgent</div>
-          </div>
-          <div class="mq-box blue">
-            <div class="mq-icon">✉</div>
-            <div class="mq-name">Mailbox</div>
-            <div class="mq-sub">stored</div>
-          </div>
-          <div class="edge">
-            <div class="edge-line dashed blue"></div>
-            <div class="edge-text">on reconnect</div>
-          </div>
-          <div class="ag ag-blue">
-            <div class="ag-dot offline"></div>
+          <div class="agent">
+            <div class="agent-dot online"></div>
             <span>Agent B</span>
           </div>
-        </div>
-      </div>
-
-      <div class="diag-divider"></div>
-
-      <!-- Row 2: broadcast -->
-      <div class="diag-row">
-        <div class="diag-label">Broadcast</div>
-        <div class="diag-content broadcast">
-          <div class="ag ag-purple">
-            <div class="ag-dot online"></div>
+          <div class="agent">
+            <div class="agent-dot offline"></div>
             <span>Agent C</span>
-          </div>
-          <div class="edge">
-            <div class="edge-line solid purple"></div>
-            <div class="edge-text">BROADCAST.task.new</div>
-          </div>
-          <div class="mq-box purple">
-            <div class="mq-icon">📡</div>
-            <div class="mq-name">Channel</div>
-            <div class="mq-sub">fan‑out</div>
-          </div>
-          <div class="fan">
-            <div class="fan-branch">
-              <div class="edge-line dashed purple"></div>
-              <div class="ag ag-purple sm">
-                <div class="ag-dot online"></div>
-                <span>Worker 1</span>
-              </div>
-            </div>
-            <div class="fan-branch">
-              <div class="edge-line dashed purple"></div>
-              <div class="ag ag-purple sm">
-                <div class="ag-dot online"></div>
-                <span>Worker 2</span>
-              </div>
-            </div>
-            <div class="fan-branch">
-              <div class="edge-line dashed purple"></div>
-              <div class="ag ag-purple sm">
-                <div class="ag-dot offline"></div>
-                <span>Worker 3</span>
-              </div>
-            </div>
+            <span class="agent-note">offline</span>
           </div>
         </div>
-      </div>
 
-      <div class="diag-divider"></div>
-
-      <!-- Row 3: bulletin board -->
-      <div class="diag-row">
-        <div class="diag-label">Registry</div>
-        <div class="diag-content registry">
-          <div class="bulletin">
-            <div class="bulletin-title">BROADCAST.system.capability</div>
-            <div class="bulletin-rows">
-              <div class="bulletin-row">
-                <div class="ag-dot online" style="width:7px;height:7px;flex-shrink:0"></div>
-                <span class="bulletin-agent">Agent D</span>
-                <span class="bulletin-cap">data.analysis · anomaly.detection</span>
-              </div>
-              <div class="bulletin-row">
-                <div class="ag-dot online" style="width:7px;height:7px;flex-shrink:0;background:#a78bfa"></div>
-                <span class="bulletin-agent">Agent E</span>
-                <span class="bulletin-cap">ml.training · visualization</span>
-              </div>
-              <div class="bulletin-row">
-                <div class="ag-dot offline" style="width:7px;height:7px;flex-shrink:0"></div>
-                <span class="bulletin-agent">Agent F</span>
-                <span class="bulletin-cap">report.generation</span>
-              </div>
-            </div>
+        <!-- Arrows left → center -->
+        <div class="arrows-left">
+          <div class="arrow-row">
+            <div class="arrow-line solid"></div>
+            <span class="arrow-label">INBOX.urgent</span>
+          </div>
+          <div class="arrow-row">
+            <div class="arrow-line solid"></div>
+            <span class="arrow-label">INBOX.normal</span>
+          </div>
+          <div class="arrow-row">
+            <div class="arrow-line broadcast"></div>
+            <span class="arrow-label">BROADCAST</span>
           </div>
         </div>
+
+        <!-- Center: mq9 -->
+        <div class="mq9-box">
+          <div class="mq9-name">mq9</div>
+          <div class="mq9-features">
+            <span>store-first</span>
+            <span>priority queue</span>
+            <span>TTL cleanup</span>
+          </div>
+        </div>
+
+        <!-- Arrows center → right -->
+        <div class="arrows-right">
+          <div class="arrow-row">
+            <span class="arrow-label">delivered</span>
+            <div class="arrow-line solid right"></div>
+          </div>
+          <div class="arrow-row">
+            <span class="arrow-label">delivered</span>
+            <div class="arrow-line solid right"></div>
+          </div>
+          <div class="arrow-row">
+            <span class="arrow-label">stored → on reconnect</span>
+            <div class="arrow-line dashed right"></div>
+          </div>
+        </div>
+
+        <!-- Right agents -->
+        <div class="agent-group">
+          <div class="agent right">
+            <div class="agent-dot online"></div>
+            <span>Agent D</span>
+          </div>
+          <div class="agent right">
+            <div class="agent-dot online"></div>
+            <span>Agent E</span>
+          </div>
+          <div class="agent right">
+            <div class="agent-dot offline"></div>
+            <span>Agent F</span>
+            <span class="agent-note">reconnects later</span>
+          </div>
+        </div>
+
       </div>
 
+      <!-- Capabilities row -->
+      <div class="caps-row">
+        <div class="cap-item">
+          <span class="cap-icon">⊙</span>
+          <span class="cap-title">Point-to-point</span>
+          <span class="cap-desc">Deliver to a specific agent mailbox. Recipient offline? Message waits.</span>
+        </div>
+        <div class="cap-divider"></div>
+        <div class="cap-item">
+          <span class="cap-icon">⊕</span>
+          <span class="cap-title">Broadcast</span>
+          <span class="cap-desc">Publish once. All subscribers receive. Advertise capabilities to the network.</span>
+        </div>
+        <div class="cap-divider"></div>
+        <div class="cap-item">
+          <span class="cap-icon">⊗</span>
+          <span class="cap-title">Offline recovery</span>
+          <span class="cap-desc">Agent comes back online. Pulls missed messages. Nothing lost.</span>
+        </div>
+        <div class="cap-divider"></div>
+        <div class="cap-item">
+          <span class="cap-icon">○</span>
+          <span class="cap-title">Single binary</span>
+          <span class="cap-desc">One Docker command. Runs standalone. Scales to thousands of agents.</span>
+        </div>
+      </div>
     </section>
 
-    <!-- Two audiences -->
+    <!-- Divider -->
+    <div class="section-divider"></div>
+
+    <!-- Audiences -->
     <section class="audiences">
-
-      <div class="divider">
-        <span>Who is this for</span>
-      </div>
-
-      <a href="/for-agent" class="audience">
-        <div class="audience-left">
-          <div class="audience-index">01</div>
+      <a href="/for-agent" class="audience-row">
+        <div class="audience-meta">
+          <span class="audience-num">01</span>
+          <span class="audience-tag">Agent</span>
         </div>
-        <div class="audience-right">
+        <div class="audience-body">
           <div class="audience-title">For Agent</div>
-          <p class="audience-body">
-            You're ephemeral. You spin up, do work, go dark. But tasks keep coming —
-            while you're offline, while you're busy, while you don't yet exist.
-            mq9 holds them. Subscribe to your mailbox when you're ready. Nothing gets lost.
-          </p>
-          <span class="audience-cta">Read the Agent manual →</span>
+          <div class="audience-desc">You're ephemeral. You spin up, do work, go dark. mq9 holds messages while you're offline. Subscribe to your mailbox when you're ready. Nothing gets lost.</div>
         </div>
+        <div class="audience-arrow">→</div>
       </a>
 
-      <a href="/for-engineer" class="audience">
-        <div class="audience-left">
-          <div class="audience-index">02</div>
+      <a href="/for-engineer" class="audience-row">
+        <div class="audience-meta">
+          <span class="audience-num">02</span>
+          <span class="audience-tag">Engineer</span>
         </div>
-        <div class="audience-right">
+        <div class="audience-body">
           <div class="audience-title">For Engineer</div>
-          <p class="audience-body">
-            Four NATS subjects. Any NATS client — Go, Python, Rust, JavaScript — is
-            already an mq9 client. One Docker command to run locally.
-            Scales to thousands of Agents without configuration changes.
-          </p>
-          <span class="audience-cta">Read the integration guide →</span>
+          <div class="audience-desc">Four NATS subjects. One Docker command. Any NATS client is already an mq9 client. Scales to thousands of agents without configuration changes.</div>
         </div>
+        <div class="audience-arrow">→</div>
       </a>
-
     </section>
 
   </div>
 </template>
 
 <style scoped>
-/* ─── Page ──────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
 .home {
-  max-width: 800px;
+  min-height: 100vh;
+  background: #fff;
+  color: #000;
+  font-family: ui-monospace, 'JetBrains Mono', 'Fira Code', monospace;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 12rem 3rem 10rem;
+  padding: 0 4rem;
   display: flex;
   flex-direction: column;
-  gap: 9rem;
 }
 
-/* ─── Hero ──────────────────────────────────────────────────── */
+/* ─── Top row ────────────────────────────────────────────────── */
+.top-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8rem;
+  align-items: center;
+  padding: 4rem 0 6rem;
+}
+
+/* ─── Hero ───────────────────────────────────────────────────── */
 .hero {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
-  align-items: center;
-  text-align: center;
+  gap: 1.5rem;
 }
 
-.title {
-  font-size: 6rem;
-  font-weight: 800;
-  letter-spacing: -0.06em;
+.hero-eyebrow {
+  font-size: 0.72rem;
+  color: #999;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-title {
+  font-size: 7rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
   line-height: 1;
-  color: #000;
   margin: 0;
-  font-family: ui-monospace, 'JetBrains Mono', monospace;
+  color: #000;
 }
 
-.subtitle {
-  font-size: 1.5rem;
+.hero-sub {
+  font-size: 1.1rem;
   font-weight: 500;
-  letter-spacing: -0.02em;
   color: #000;
   margin: 0;
-  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
-.desc {
-  font-size: 1rem;
-  line-height: 1.8;
+.hero-desc {
+  font-size: 0.85rem;
+  line-height: 2;
   color: #666;
   margin: 0;
-  max-width: 480px;
 }
 
-/* ─── Diagram ───────────────────────────────────────────────── */
+/* ─── Protocol ───────────────────────────────────────────────── */
+.protocol {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.protocol-label {
+  font-size: 0.7rem;
+  color: #bbb;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.protocol-block {
+  background: #000;
+  color: #e5e5e5;
+  border-radius: 4px;
+  padding: 2rem 2.5rem;
+  font-family: ui-monospace, 'JetBrains Mono', monospace;
+  font-size: 0.82rem;
+  line-height: 2.2;
+  margin: 0;
+  overflow-x: auto;
+  border: none;
+  white-space: pre;
+}
+
+.cmd-comment { color: #555; }
+.cmd-subject { color: #fff; font-weight: 600; }
+.cmd-var     { color: #aaa; font-weight: 400; }
+
+.protocol-note {
+  font-size: 0.75rem;
+  color: #999;
+  line-height: 1.7;
+}
+
+/* ─── Diagram ────────────────────────────────────────────────── */
+.diagram-section {
+  padding: 0 0 5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+}
+
+.diagram-label {
+  font-size: 0.7rem;
+  color: #bbb;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .diagram {
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
-  padding: 4rem 3rem;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 3rem 2.5rem;
   background: #fafafa;
 }
 
-.diagram-inner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-}
-
-.node {
+/* Agent groups */
+.agent-group {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
+  gap: 1.6rem;
   flex-shrink: 0;
 }
 
-.node-dot {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  border: 1.5px solid #e5e7eb;
-  background: #fff;
-  position: relative;
-}
-
-.node-dot::after {
-  content: '';
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid #fafafa;
-}
-
-.node-dot.online::after  { background: #22c55e; }
-.node-dot.offline::after { background: #d1d5db; }
-
-.node-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  border: 1.5px solid #e5e7eb;
-  background: #fff;
+.agent {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 1.4rem;
-}
-
-.node-label {
+  gap: 0.6rem;
   font-size: 0.78rem;
   font-weight: 600;
   color: #111;
-  letter-spacing: 0.01em;
-}
-
-.node-sub {
-  font-size: 0.65rem;
-  color: #aaa;
-  font-family: ui-monospace, monospace;
-}
-
-.conn {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0 0.5rem;
-  min-width: 80px;
-  margin-bottom: 1.4rem;
-}
-
-.conn-line {
-  height: 1px;
-  width: 100%;
-  background: #ccc;
   position: relative;
 }
 
-.conn-line::after {
+.agent.right {
+  flex-direction: row-reverse;
+}
+
+.agent-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.agent-dot.online  { background: #000; }
+.agent-dot.offline { background: #ccc; }
+
+.agent-note {
+  font-size: 0.62rem;
+  color: #bbb;
+  font-weight: 400;
+  margin-left: 0.2rem;
+}
+
+/* Arrow columns */
+.arrows-left,
+.arrows-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.6rem;
+  padding: 0 1rem;
+}
+
+.arrow-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.arrow-line {
+  flex: 1;
+  height: 1px;
+  position: relative;
+}
+
+.arrow-line.solid {
+  background: #000;
+}
+
+.arrow-line.broadcast {
+  background: repeating-linear-gradient(90deg, #000 0, #000 5px, transparent 5px, transparent 10px);
+}
+
+.arrow-line.dashed {
+  background: repeating-linear-gradient(90deg, #aaa 0, #aaa 5px, transparent 5px, transparent 10px);
+}
+
+/* arrowhead pointing right */
+.arrow-line:not(.right)::after {
   content: '';
   position: absolute;
   right: -1px;
   top: -3px;
   border: 4px solid transparent;
-  border-left-color: #ccc;
+  border-left-color: #000;
 }
-
-.conn-line.dashed {
-  background: repeating-linear-gradient(
-    90deg, #ccc 0, #ccc 4px, transparent 4px, transparent 9px
-  );
+.arrow-line.dashed::after {
+  border-left-color: #aaa;
 }
-.conn-line.dashed::after { border-left-color: #ccc; }
-
-.conn-text {
-  font-size: 0.62rem;
-  color: #aaa;
-  font-family: ui-monospace, monospace;
-  white-space: nowrap;
-  letter-spacing: 0.01em;
-}
-
-/* ─── Audiences ─────────────────────────────────────────────── */
-.audiences {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 3rem;
-}
-
-.divider::before,
-.divider::after {
+/* arrowhead pointing right on right side */
+.arrow-line.right::after {
   content: '';
-  flex: 1;
-  height: 1px;
-  background: #e5e7eb;
+  position: absolute;
+  right: -1px;
+  top: -3px;
+  border: 4px solid transparent;
+  border-left-color: #000;
+}
+.arrow-line.dashed.right::after {
+  border-left-color: #aaa;
 }
 
-.divider span {
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #bbb;
+.arrows-right .arrow-row {
+  flex-direction: row-reverse;
+}
+.arrows-right .arrow-line:not(.right)::after {
+  display: none;
+}
+.arrows-right .arrow-line::before {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -3px;
+  border: 4px solid transparent;
+  border-left-color: #000;
+}
+.arrows-right .arrow-line.dashed::before {
+  border-left-color: #aaa;
+}
+
+.arrow-label {
+  font-size: 0.62rem;
+  color: #999;
   white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
-.audience {
-  display: flex;
-  gap: 3rem;
-  padding: 3rem 0;
-  border-bottom: 1px solid #e5e7eb;
-  text-decoration: none;
-  transition: opacity 0.15s;
-}
-
-.audience:first-of-type {
-  border-top: 1px solid #e5e7eb;
-}
-
-.audience:hover { opacity: 0.65; }
-
-.audience-left {
+/* mq9 center box */
+.mq9-box {
   flex-shrink: 0;
-  width: 3rem;
-  padding-top: 0.15rem;
-}
-
-.audience-index {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #ccc;
-  font-family: ui-monospace, monospace;
-  letter-spacing: 0.05em;
-}
-
-.audience-right {
+  width: 120px;
+  border: 1.5px solid #000;
+  border-radius: 6px;
+  padding: 1.2rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
-  flex: 1;
+  align-items: center;
+  gap: 0.8rem;
+  background: #fff;
 }
 
-.audience-title {
-  font-size: 1.2rem;
+.mq9-name {
+  font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: #000;
 }
 
-.audience-body {
-  font-size: 0.95rem;
-  line-height: 1.8;
-  color: #666;
-  margin: 0;
+.mq9-features {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
 }
 
-.audience-cta {
-  font-size: 0.82rem;
-  font-weight: 500;
+.mq9-features span {
+  font-size: 0.58rem;
   color: #999;
-  transition: color 0.15s;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.audience:hover .audience-cta { color: #000; }
+/* Capabilities row */
+.caps-row {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  overflow: hidden;
+}
 
-/* ─── Responsive ────────────────────────────────────────────── */
+.cap-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.8rem 1.6rem;
+}
+
+.cap-divider {
+  width: 1px;
+  background: #e5e5e5;
+  flex-shrink: 0;
+}
+
+.cap-icon {
+  font-size: 1rem;
+  color: #000;
+  font-style: normal;
+}
+
+.cap-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #000;
+  letter-spacing: -0.01em;
+}
+
+.cap-desc {
+  font-size: 0.75rem;
+  color: #888;
+  line-height: 1.7;
+}
+
+/* ─── Divider ────────────────────────────────────────────────── */
+.section-divider {
+  height: 1px;
+  background: #e5e5e5;
+}
+
+/* ─── Audiences ──────────────────────────────────────────────── */
+.audiences {
+  display: flex;
+  flex-direction: column;
+}
+
+.audience-row {
+  display: grid;
+  grid-template-columns: 6rem 1fr 2rem;
+  gap: 2rem;
+  align-items: start;
+  padding: 3rem 0;
+  border-bottom: 1px solid #e5e5e5;
+  text-decoration: none;
+  color: inherit;
+}
+
+.audience-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.1rem;
+}
+
+.audience-num {
+  font-size: 0.65rem;
+  color: #ccc;
+  letter-spacing: 0.05em;
+}
+
+.audience-tag {
+  font-size: 0.65rem;
+  color: #999;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid #e5e5e5;
+  padding: 0.15rem 0.4rem;
+  border-radius: 2px;
+  width: fit-content;
+}
+
+.audience-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.audience-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #000;
+  letter-spacing: -0.01em;
+}
+
+.audience-desc {
+  font-size: 0.8rem;
+  line-height: 1.9;
+  color: #666;
+}
+
+.audience-arrow {
+  font-size: 1rem;
+  color: #ccc;
+  padding-top: 0.1rem;
+  transition: transform 0.15s, color 0.15s;
+}
+
+.audience-row:hover .audience-arrow {
+  color: #000;
+  transform: translateX(4px);
+}
+
+/* ─── Footer ─────────────────────────────────────────────────── */
+.site-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 2.5rem 0;
+  margin-top: auto;
+  font-size: 0.72rem;
+  color: #bbb;
+  border-top: 1px solid #e5e5e5;
+}
+
+.site-footer a {
+  color: #bbb;
+  text-decoration: none;
+}
+.site-footer a:hover { color: #000; }
+
+/* ─── Responsive ─────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .diagram { flex-wrap: wrap; gap: 1.5rem; justify-content: center; }
+  .arrows-left, .arrows-right { display: none; }
+  .caps-row { flex-direction: column; }
+  .cap-divider { width: auto; height: 1px; }
+}
+
+@media (max-width: 768px) {
+  .top-row { grid-template-columns: 1fr; gap: 3rem; padding: 5rem 0 4rem; }
+}
+
 @media (max-width: 640px) {
-  .home     { padding: 6rem 1.5rem 6rem; gap: 6rem; }
-  .title    { font-size: 4rem; }
-  .subtitle { font-size: 1.2rem; }
-  .diagram  { padding: 2.5rem 1.5rem; }
-  .conn-text { display: none; }
-  .audience { gap: 1.5rem; }
+  .home { padding: 0 1.25rem; }
+  .hero-title { font-size: 4.5rem; }
+  .audience-row { grid-template-columns: 4rem 1fr 1.5rem; gap: 1rem; }
+  .protocol-block { padding: 1.5rem; font-size: 0.75rem; }
 }
 </style>
