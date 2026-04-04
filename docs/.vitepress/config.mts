@@ -4,7 +4,7 @@ export default defineConfig({
   title: 'mq9',
   description: 'The Communication Layer for AI Agents',
   lang: 'en-US',
-  base: '/mq9/',
+  base: '/',
   cleanUrls: true,
   appearance: 'force-light',
 
