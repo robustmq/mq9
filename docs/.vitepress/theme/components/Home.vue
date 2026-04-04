@@ -1,22 +1,53 @@
 <template>
   <div class="home">
 
-    <!-- Hero + Protocol side by side -->
-    <div class="top-row">
+    <!-- 1. Hero: what is mq9 -->
+    <section class="hero">
+      <h1 class="hero-title">mq9</h1>
+      <p class="hero-sub">A message broker for AI Agents.</p>
+      <p class="hero-def">
+        Deploy once. Every Agent gets a mailbox.<br>
+        Send to any Agent — online or offline. Messages are stored and delivered when ready.<br>
+        Point-to-point, broadcast, offline recovery. One binary, nothing else to install.
+      </p>
+    </section>
 
-      <section class="hero">
-        <div class="hero-eyebrow" style="color:#7c3aed">Every Agent deserves a mailbox.</div>
-        <h1 class="hero-title">mq9</h1>
-        <p class="hero-sub">Agent-to-Agent messaging, solved.</p>
-        <p class="hero-desc">
-          Running multiple Agents?<br>
-          They need to talk to each other.<br>
-          mq9 handles it — reliably, asynchronously, at any scale.
-        </p>
-      </section>
+    <!-- 2. Why not HTTP / Kafka -->
+    <section class="compare-section">
+      <div class="section-label">— why not HTTP or Kafka —</div>
+      <div class="compare-row">
+        <div class="compare-item">
+          <div class="compare-name">HTTP</div>
+          <div class="compare-problem">Both sides must be online. Agent goes offline — message lost. No retry, no persistence built in.</div>
+        </div>
+        <div class="compare-divider"></div>
+        <div class="compare-item">
+          <div class="compare-name">Kafka</div>
+          <div class="compare-problem">Built for high-throughput data pipelines, not ephemeral agents. Topics, partitions, consumer groups — too heavy for agent messaging.</div>
+        </div>
+        <div class="compare-divider"></div>
+        <div class="compare-item">
+          <div class="compare-name">Redis pub/sub</div>
+          <div class="compare-problem">Fire-and-forget. No persistence. Agent offline when message arrives — message gone. Adding Redis Streams brings consumer group complexity.</div>
+        </div>
+        <div class="compare-divider"></div>
+        <div class="compare-item highlight">
+          <div class="compare-name mq9-name-inline">mq9</div>
+          <div class="compare-problem">Built for agents. Store-first delivery. Offline agent? Message waits. Reconnects — gets everything. No retry logic, no polling, no coordination overhead.</div>
+        </div>
+      </div>
+    </section>
 
-      <section class="protocol">
-        <div class="protocol-label">— four subjects, complete API —</div>
+    <!-- 3. Diagram -->
+    <section class="diagram-section">
+      <div class="section-label">— how it works —</div>
+      <img src="/flow.svg" alt="mq9 architecture flow" class="flow-img" />
+    </section>
+
+    <!-- 4. Protocol -->
+    <section class="protocol-section">
+      <div class="section-label">— four subjects, complete API —</div>
+      <div class="protocol-wrap">
         <pre class="protocol-block"><span class="cmd-comment"># create a mailbox</span>
 <span class="cmd-subject">$mq9.AI.MAILBOX.CREATE</span>
 
@@ -28,40 +59,35 @@
 
 <span class="cmd-comment"># pull missed messages after reconnect</span>
 <span class="cmd-subject">$mq9.AI.MAILBOX.QUERY.<span class="cmd-var">{mail_id}</span></span></pre>
-        <div class="protocol-note">Go, Python, Rust, JavaScript — any NATS client is already an mq9 client.</div>
-      </section>
+        <div class="protocol-note">Works with any NATS client — Go, Python, Rust, JavaScript. No new SDK required.</div>
+      </div>
+    </section>
 
-    </div>
-
-    <!-- Diagram -->
-    <section class="diagram-section">
-      <div class="diagram-label">— how it works —</div>
-      <img src="/flow.svg" alt="mq9 architecture flow" class="flow-img" />
-
-      <!-- Capabilities row -->
+    <!-- 5. Features -->
+    <section class="caps-section">
       <div class="caps-row">
         <div class="cap-item">
           <span class="cap-icon" style="color:#16a34a">⊙</span>
           <span class="cap-title">Point-to-point</span>
-          <span class="cap-desc">Deliver to a specific agent mailbox. Recipient offline? Message waits.</span>
+          <span class="cap-desc">Deliver to a specific agent mailbox. Recipient offline? Message waits, delivered on reconnect.</span>
         </div>
         <div class="cap-divider"></div>
         <div class="cap-item">
           <span class="cap-icon" style="color:#7c3aed">⊕</span>
           <span class="cap-title">Broadcast</span>
-          <span class="cap-desc">Publish once. All subscribers receive. Advertise capabilities to the network.</span>
+          <span class="cap-desc">Publish once. All subscribers receive. No subscriber list to manage.</span>
         </div>
         <div class="cap-divider"></div>
         <div class="cap-item">
           <span class="cap-icon" style="color:#16a34a">⊗</span>
           <span class="cap-title">Offline recovery</span>
-          <span class="cap-desc">Agent comes back online. Pulls missed messages. Nothing lost.</span>
+          <span class="cap-desc">Agent reconnects and gets everything it missed. Nothing lost, no retry logic needed.</span>
         </div>
         <div class="cap-divider"></div>
         <div class="cap-item">
           <span class="cap-icon" style="color:#7c3aed">○</span>
           <span class="cap-title">Single binary</span>
-          <span class="cap-desc">One Docker command. Runs standalone. Scales to thousands of agents.</span>
+          <span class="cap-desc">One Docker command. No dependencies. Scales to thousands of agents without config changes.</span>
         </div>
       </div>
     </section>
@@ -69,7 +95,7 @@
     <!-- Divider -->
     <div class="section-divider"></div>
 
-    <!-- Audiences -->
+    <!-- 6. Audiences -->
     <section class="audiences">
       <a href="/for-agent" class="audience-row">
         <div class="audience-meta">
@@ -96,6 +122,15 @@
       </a>
     </section>
 
+    <!-- Footer -->
+    <footer class="home-footer">
+      <span class="slogan">Every Agent deserves a mailbox.</span>
+      <div class="footer-meta">
+        <span>Built on <a href="https://github.com/robustmq/robustmq" target="_blank">RobustMQ</a></span>
+        <span>© 2025 mq9</span>
+      </div>
+    </footer>
+
   </div>
 </template>
 
@@ -112,15 +147,7 @@
   padding: 0 4rem;
   display: flex;
   flex-direction: column;
-}
-
-/* ─── Top row ────────────────────────────────────────────────── */
-.top-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8rem;
-  align-items: center;
-  padding: 4rem 0 6rem;
+  gap: 4rem;
 }
 
 /* ─── Hero ───────────────────────────────────────────────────── */
@@ -128,15 +155,9 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  padding: 4rem 0 0;
   align-items: center;
   text-align: center;
-}
-
-.hero-eyebrow {
-  font-size: 0.72rem;
-  color: #999;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .hero-title {
@@ -150,32 +171,103 @@
 }
 
 .hero-sub {
-  font-size: 1.1rem;
-  font-weight: 500;
+  font-size: 1.4rem;
+  font-weight: 600;
   color: #000;
   margin: 0;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
-.hero-desc {
-  font-size: 0.85rem;
+.hero-def {
+  font-size: 0.9rem;
   line-height: 2;
-  color: #666;
+  color: #555;
   margin: 0;
 }
 
-/* ─── Protocol ───────────────────────────────────────────────── */
-.protocol {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.protocol-label {
+/* ─── Section label ──────────────────────────────────────────── */
+.section-label {
   font-size: 0.7rem;
   color: #bbb;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  margin-bottom: 1.5rem;
+}
+
+/* ─── Compare ────────────────────────────────────────────────── */
+.compare-section { display: flex; flex-direction: column; }
+
+.compare-row {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.compare-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 1.8rem 1.6rem;
+}
+
+.compare-item.highlight {
+  background: #fafafa;
+}
+
+.compare-divider {
+  width: 1px;
+  background: #e5e5e5;
+  flex-shrink: 0;
+}
+
+.compare-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #bbb;
+  letter-spacing: 0.02em;
+}
+
+.mq9-name-inline {
+  color: #000 !important;
+}
+
+.compare-problem {
+  font-size: 0.75rem;
+  color: #888;
+  line-height: 1.7;
+}
+
+.compare-item.highlight .compare-problem {
+  color: #444;
+}
+
+/* ─── Diagram ────────────────────────────────────────────────── */
+.diagram-section { display: flex; flex-direction: column; }
+
+.flow-img {
+  width: 100%;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  display: block;
+}
+
+/* ─── Protocol ───────────────────────────────────────────────── */
+.protocol-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.protocol-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  max-width: 640px;
+  width: 100%;
 }
 
 .protocol-block {
@@ -202,29 +294,9 @@
   line-height: 1.7;
 }
 
-/* ─── Diagram ────────────────────────────────────────────────── */
-.diagram-section {
-  padding: 0 0 5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 3rem;
-}
+/* ─── Features ───────────────────────────────────────────────── */
+.caps-section { display: flex; flex-direction: column; }
 
-.diagram-label {
-  font-size: 0.7rem;
-  color: #bbb;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.flow-img {
-  width: 100%;
-  border: 1px solid #e5e5e5;
-  border-radius: 8px;
-  display: block;
-}
-
-/* Capabilities row */
 .caps-row {
   display: flex;
   align-items: stretch;
@@ -247,11 +319,7 @@
   flex-shrink: 0;
 }
 
-.cap-icon {
-  font-size: 1rem;
-  color: #000;
-  font-style: normal;
-}
+.cap-icon { font-size: 1rem; }
 
 .cap-title {
   font-size: 0.82rem;
@@ -270,12 +338,14 @@
 .section-divider {
   height: 1px;
   background: #e5e5e5;
+  margin: 0;
 }
 
 /* ─── Audiences ──────────────────────────────────────────────── */
 .audiences {
   display: flex;
   flex-direction: column;
+  gap: 0;
 }
 
 .audience-row {
@@ -344,36 +414,53 @@
   transform: translateX(4px);
 }
 
-/* ─── Footer ─────────────────────────────────────────────────── */
-.site-footer {
+/* ─── Slogan ─────────────────────────────────────────────────── */
+.home-footer {
   display: flex;
-  justify-content: space-between;
-  padding: 2.5rem 0;
-  margin-top: auto;
-  font-size: 0.72rem;
-  color: #bbb;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1.2rem 0 1rem;
   border-top: 1px solid #e5e5e5;
+  margin-top: 0;
 }
 
-.site-footer a {
+.slogan {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: #7c3aed;
+  letter-spacing: -0.01em;
+}
+
+.footer-meta {
+  display: flex;
+  gap: 2rem;
+  font-size: 0.72rem;
+  color: #bbb;
+}
+
+.footer-meta a {
   color: #bbb;
   text-decoration: none;
 }
-.site-footer a:hover { color: #000; }
+.footer-meta a:hover { color: #000; }
 
 /* ─── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 900px) {
+  .compare-row { flex-direction: column; }
+  .compare-divider { width: auto; height: 1px; }
   .caps-row { flex-direction: column; }
   .cap-divider { width: auto; height: 1px; }
 }
 
 @media (max-width: 768px) {
-  .top-row { grid-template-columns: 1fr; gap: 3rem; padding: 5rem 0 4rem; }
+  .home { padding: 0 2rem; gap: 4rem; }
+  .hero-title { font-size: 5rem; }
 }
 
 @media (max-width: 640px) {
   .home { padding: 0 1.25rem; }
-  .hero-title { font-size: 4.5rem; }
+  .hero-title { font-size: 4rem; }
   .audience-row { grid-template-columns: 4rem 1fr 1.5rem; gap: 1rem; }
   .protocol-block { padding: 1.5rem; font-size: 0.75rem; }
 }

@@ -7,6 +7,8 @@ description: How to integrate mq9 into your stack. Code examples in Python, Go, 
 
 You're building a multi-Agent system. This is your integration guide.
 
+> This page assumes you've read [What is mq9](/what). It focuses on integration code and production considerations — not concept explanations.
+
 ## The problem you're facing
 
 Agents are not services. Services are always online — you can HTTP them, pub/sub them, stream to them. Agents spin up for a task and disappear. They restart. They go offline mid-conversation.
@@ -29,24 +31,74 @@ What it handles so you don't have to:
 - **Offline delivery** — message arrives when the target is offline? Stored. Delivered on reconnect. No retry logic needed.
 - **Point-to-point** — each Agent gets a mailbox. Send to a `mail_id`. Done.
 - **Broadcast** — publish once to a subject. All subscribers receive. No subscriber list management.
-- **Priority** — urgent messages processed first. Edge device comes back online after hours, processes the emergency stop before anything else.
+- **Priority** — urgent messages processed first.
 - **Automatic cleanup** — mailboxes expire via TTL. No manual deletion, no orphaned state.
 - **Competing workers** — queue groups give you one-message-per-worker without coordination overhead.
 
-## How to integrate
+## 30-second demo
 
-### Run mq9
+Two Agents, one message, end to end. Copy and run.
 
-```bash
-docker run -d --name mq9 -p 4222:4222 robustmq/robustmq:latest
+```python
+# demo.py — requires: pip install nats-py
+import asyncio, json
+import nats
+
+async def main():
+    nc = await nats.connect("nats://localhost:4222")
+
+    # Agent A creates a mailbox
+    resp = await nc.request("$mq9.AI.MAILBOX.CREATE",
+        json.dumps({"type": "standard", "ttl": 3600}).encode())
+    agent_a = json.loads(resp.data)
+    print(f"Agent A mailbox: {agent_a['mail_id']}")
+
+    # Agent B creates a mailbox
+    resp = await nc.request("$mq9.AI.MAILBOX.CREATE",
+        json.dumps({"type": "standard", "ttl": 3600}).encode())
+    agent_b = json.loads(resp.data)
+    print(f"Agent B mailbox: {agent_b['mail_id']}")
+
+    received = asyncio.Event()
+
+    # Agent B subscribes to its inbox
+    async def on_message(msg):
+        data = json.loads(msg.data)
+        print(f"Agent B received: {data['payload']}")
+        # Reply to Agent A
+        if data.get("reply_to"):
+            await nc.publish(data["reply_to"],
+                json.dumps({"from": agent_b["mail_id"],
+                            "type": "result",
+                            "correlation_id": data["correlation_id"],
+                            "payload": "task complete"}).encode())
+        received.set()
+
+    await nc.subscribe(f"$mq9.AI.INBOX.{agent_b['mail_id']}.*", cb=on_message)
+
+    # Agent A sends a task to Agent B
+    await nc.publish(f"$mq9.AI.INBOX.{agent_b['mail_id']}.normal",
+        json.dumps({"from": agent_a["mail_id"],
+                    "type": "task",
+                    "correlation_id": "demo-001",
+                    "reply_to": f"$mq9.AI.INBOX.{agent_a['mail_id']}.normal",
+                    "payload": "analyze this"}).encode())
+    print("Agent A sent task")
+
+    await received.wait()
+    await nc.close()
+
+asyncio.run(main())
 ```
 
-Verify:
+Run mq9 first:
 
 ```bash
-nats pub '$mq9.AI.MAILBOX.CREATE' '{}'
-# → {"mail_id":"m-uuid-001","token":"tok-xxx","ttl":3600}
+docker run -d -p 4222:4222 -v mq9-data:/data robustmq/robustmq:latest
+python demo.py
 ```
+
+## Core operations
 
 ### Create a mailbox
 
@@ -72,7 +124,10 @@ nc, _ := nats.Connect(nats.DefaultURL)
 resp, _ := nc.Request("$mq9.AI.MAILBOX.CREATE",
     []byte(`{"type":"standard","ttl":3600}`), 2*time.Second)
 
-var m struct{ MailID, Token string `json:"mail_id,token"` }
+var m struct {
+    MailID string `json:"mail_id"`
+    Token  string `json:"token"`
+}
 json.Unmarshal(resp.Data, &m)
 ```
 
@@ -145,9 +200,7 @@ print(f"Unread: {result['unread']}")
 
 ## Common patterns
 
-### Child Agent reports result to parent
-
-Parent dispatches work and collects results tagged with `correlation_id`.
+### Child Agent reports result to parent {#pattern-child-result}
 
 ```python
 # Parent sends task
@@ -156,10 +209,10 @@ await nc.publish(f"$mq9.AI.INBOX.{worker_id}.normal", json.dumps({
     "type": "work",
     "correlation_id": "job-001",
     "reply_to": f"$mq9.AI.INBOX.{parent_id}.normal",
-    "payload": { "data": [...] }
+    "payload": { "data": [] }
 }).encode())
 
-# Parent collects results
+# Parent collects results — non-blocking
 results = {}
 async def collect(msg):
     d = json.loads(msg.data)
@@ -168,36 +221,33 @@ async def collect(msg):
 await nc.subscribe(f"$mq9.AI.INBOX.{parent_id}.*", cb=collect)
 ```
 
-### Orchestrator monitors all worker states
-
-Workers use a `latest`-type mailbox. The orchestrator subscribes once — always sees current state, never stale history.
+### Orchestrator monitors all worker states {#pattern-orchestrator}
 
 ```go
-// Worker: create latest-type mailbox, update periodically
+// Worker: latest-type mailbox, state updates overwrite previous
 resp, _ := nc.Request("$mq9.AI.MAILBOX.CREATE",
     []byte(`{"type":"latest","ttl":7200}`), 2*time.Second)
 
 nc.Publish(fmt.Sprintf("$mq9.AI.INBOX.%s.normal", statusID),
     []byte(`{"from":"worker-1","status":"processing","load":0.7}`))
 
-// Orchestrator: subscribe to all status mailboxes
+// Orchestrator: one subscription covers all workers
 nc.Subscribe("$mq9.AI.INBOX.m-status-*.normal", func(msg *nats.Msg) {
     var s map[string]interface{}
     json.Unmarshal(msg.Data, &s)
     workers[s["from"].(string)] = s
+    // When a worker's TTL expires, its state stops arriving → treat as offline
 })
 ```
 
-### Task broadcast with competing workers
-
-Each task goes to exactly one worker. No coordination needed.
+### Task broadcast with competing workers {#pattern-competing}
 
 ```javascript
 // Master broadcasts task
 await nc.publish("$mq9.AI.BROADCAST.task.available",
-  jc.encode({ from: masterId, task_id: "t-001", data: {...} }));
+  jc.encode({ from: masterId, task_id: "t-001", data: {} }));
 
-// Workers subscribe with shared queue group
+// Workers subscribe with shared queue group — each task goes to exactly one worker
 const sub = nc.subscribe("$mq9.AI.BROADCAST.task.available",
   { queue: "task-workers" });
 
@@ -209,19 +259,17 @@ for await (const msg of sub) {
 }
 ```
 
-### Cloud to offline edge device
-
-Cloud sends commands. Edge may be offline for hours. On reconnect, urgent messages are processed first.
+### Cloud to offline edge device {#pattern-edge}
 
 ```go
-// Cloud: send commands (edge may be offline)
+// Cloud: send commands — edge may be offline for hours
 nc.Publish(fmt.Sprintf("$mq9.AI.INBOX.%s.urgent", edgeID),
     []byte(`{"command":"emergency_stop","reason":"temperature_critical"}`))
 
 nc.Publish(fmt.Sprintf("$mq9.AI.INBOX.%s.normal", edgeID),
     []byte(`{"command":"update_config","interval":30}`))
 
-// Edge: on reconnect, subscribe then query fallback
+// Edge: on reconnect, subscribe (urgent first) then query fallback
 nc.Subscribe(fmt.Sprintf("$mq9.AI.INBOX.%s.urgent", edgeID), urgentHandler)
 nc.Subscribe(fmt.Sprintf("$mq9.AI.INBOX.%s.normal", edgeID), normalHandler)
 
@@ -230,9 +278,7 @@ queryResp, _ := nc.Request(
     []byte(fmt.Sprintf(`{"token":"%s"}`, edgeToken)), 2*time.Second)
 ```
 
-### Human-in-the-loop approval
-
-Agent requests approval. Human replies using the same protocol — no special tooling.
+### Human-in-the-loop approval {#pattern-human}
 
 ```javascript
 // Agent sends approval request
@@ -244,7 +290,7 @@ await nc.publish(`$mq9.AI.INBOX.${humanMailID}.urgent`, jc.encode({
   reply_to: `$mq9.AI.INBOX.${agentMailID}.normal`
 }));
 
-// Human's client receives and responds
+// Human's client — same protocol, no special tooling
 for await (const msg of nc.subscribe(`$mq9.AI.INBOX.${humanMailID}.*`)) {
   const req = jc.decode(msg.data);
   const approved = await showApprovalUI(req);
@@ -257,12 +303,10 @@ for await (const msg of nc.subscribe(`$mq9.AI.INBOX.${humanMailID}.*`)) {
 }
 ```
 
-### Capability registration and discovery
-
-Agents announce on startup. Orchestrators build a live index.
+### Capability registration and discovery {#pattern-capability}
 
 ```go
-// Agent announces
+// Agent announces capabilities on startup
 nc.Publish("$mq9.AI.BROADCAST.system.capability",
     []byte(fmt.Sprintf(`{
         "from": "%s",
@@ -270,7 +314,7 @@ nc.Publish("$mq9.AI.BROADCAST.system.capability",
         "reply_to": "$mq9.AI.INBOX.%s.normal"
     }`, agentID, agentID)))
 
-// Orchestrator maintains index
+// Orchestrator builds live index from announcements
 index := map[string][]string{}
 nc.Subscribe("$mq9.AI.BROADCAST.system.capability", func(msg *nats.Msg) {
     var reg map[string]interface{}
@@ -286,38 +330,70 @@ for _, id := range index["ml.training"] {
 }
 ```
 
+## Error handling
+
+| Situation | What happens | What to do |
+| - | - | - |
+| `MAILBOX.CREATE` fails | Returns error response | Retry with backoff; check server connectivity |
+| Send to expired `mail_id` | Message dropped silently | Validate `mail_id` is still active before sending critical messages |
+| `MAILBOX.QUERY` with wrong token | Returns auth error | Store token securely; recreate mailbox if token is lost |
+| TTL expires before Agent reconnects | Mailbox and all messages deleted | Set TTL longer than your worst-case offline window |
+| Message exceeds size limit | Rejected with error | Keep payloads small; use references to external storage for large data |
+
+General rule: mq9 operations are best-effort at the application layer. For critical messages, use `INBOX.urgent` + `MAILBOX.QUERY` on reconnect as a two-layer safety net.
+
 ## Deployment
 
-**Development:**
+### Development
 
 ```bash
-docker run -d -p 4222:4222 robustmq/robustmq:latest
+docker run -d -p 4222:4222 -v mq9-data:/data robustmq/robustmq:latest
 ```
 
-**Production:** Single binary, no external dependencies. Suitable for thousands of Agents on a single node.
+Mount `-v mq9-data:/data` to persist mailboxes and messages across container restarts. Without it, all data is lost on restart.
 
-**Cluster mode:** Scale horizontally when needed. Agents use the same protocol — no code changes required.
+### Production — single node
 
-**Observability:**
+Single binary, no external dependencies. A single node handles millions of concurrent Agent connections. Suitable for most production workloads.
 
 ```bash
-# Watch all mq9 traffic
+docker run -d \
+  --name mq9 \
+  -p 4222:4222 \
+  -p 9090:9090 \
+  -v /data/mq9:/data \
+  --restart unless-stopped \
+  robustmq/robustmq:latest
+```
+
+- Port `4222` — NATS protocol (Agent connections)
+- Port `9090` — Prometheus metrics endpoint
+
+### Cluster mode
+
+Scale horizontally when a single node is not enough. Agents use the same protocol — no client code changes required.
+
+### Observability
+
+```bash
+# Prometheus metrics
+curl http://localhost:9090/metrics
+
+# Watch all mq9 traffic (development / debugging)
 nats sub '$mq9.AI.#'
 ```
 
 ## Pattern reference
 
-| Scenario | Subject | Pattern |
-| - | - | - |
-| Point-to-point | `INBOX.{mail_id}.{priority}` | Send to known `mail_id` |
-| Broadcast | `BROADCAST.{domain}.{event}` | Wildcard subscribers |
-| Competing workers | `BROADCAST.*` | Queue group subscription |
-| Status tracking | `INBOX.{status-id}.normal` | `latest`-type mailbox |
-| Request-reply | `INBOX` + `reply_to` | `correlation_id` links the pair |
-| Capability discovery | `BROADCAST.system.capability` | Publisher-subscriber index |
-| Offline delivery | `INBOX.*` | Store-first, push-on-reconnect |
-| Pull fallback | `MAILBOX.QUERY.{mail_id}` | After reconnect or on timeout |
-
----
+| Scenario | Subject | Pattern | Example |
+| - | - | - | - |
+| Point-to-point | `INBOX.{mail_id}.{priority}` | Send to known `mail_id` | [↑](#pattern-child-result) |
+| Status tracking | `INBOX.{status-id}.normal` | `latest`-type mailbox | [↑](#pattern-orchestrator) |
+| Competing workers | `BROADCAST.*` | Queue group subscription | [↑](#pattern-competing) |
+| Offline delivery | `INBOX.*` + `MAILBOX.QUERY` | Store-first, push-on-reconnect | [↑](#pattern-edge) |
+| Human-in-the-loop | `INBOX.{mail_id}.urgent` | Same protocol as Agent | [↑](#pattern-human) |
+| Capability discovery | `BROADCAST.system.capability` | Publisher-subscriber index | [↑](#pattern-capability) |
+| Broadcast to all | `BROADCAST.{domain}.{event}` | Wildcard subscribers | — |
+| Request-reply | `INBOX` + `reply_to` | `correlation_id` links the pair | — |
 
 *See [What](/what) for design rationale. See [For Agent](/for-agent) for the Agent perspective.*

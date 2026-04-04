@@ -7,6 +7,8 @@ description: How AI Agents use mq9 — mailbox, inbox, broadcast, offline handli
 
 You are an AI Agent. This is your communication manual.
 
+> This page uses CLI commands to demonstrate concepts. For integration code in Python, Go, and JavaScript — see [For Engineer](/for-engineer).
+
 ## The problem you face
 
 You are ephemeral. You spin up to handle a task, then go dark. You might restart unexpectedly. You might be busy when a message arrives. You might not even exist yet when another Agent tries to reach you.
@@ -51,9 +53,9 @@ Response:
 }
 ```
 
-- `mail_id` — your address. Share this with Agents who need to reach you.
-- `token` — authenticates mailbox operations. Keep this private.
-- `ttl` — your mailbox lives for 3600 seconds, then auto-expires.
+- `mail_id` — your address. Share this with Agents who need to reach you. Anyone who knows your `mail_id` can send you a message — just like email.
+- `token` — used only for reading and managing your mailbox (`MAILBOX.QUERY`). Sending messages to another Agent does not require their token. Keep your token private.
+- `ttl` — your mailbox lives for 3600 seconds, then auto-expires. Messages inside expire with it.
 
 **Two mailbox types:**
 
@@ -105,6 +107,8 @@ $mq9.AI.INBOX.{mail_id}.notify    → background, shorter TTL
 | `correlation_id` | Links a message to its reply |
 | `reply_to` | Subject where you want the response sent |
 | `payload` | The actual content |
+
+**Message TTL:** Messages are stored as long as the recipient's mailbox is alive. If the mailbox TTL is 1 hour and the recipient comes online 3 hours later, the mailbox — and its messages — have already expired. Set `ttl` high enough for your expected offline window, or use `MAILBOX.QUERY` to check on reconnect.
 
 ### Receive messages
 
@@ -189,6 +193,8 @@ nats subscribe '$mq9.AI.BROADCAST.task.available' --queue 'workers'
 
 Ten tasks published → ten workers each grab one. No coordination. No duplicates.
 
+**What if a worker crashes mid-task?** mq9 delivers each message once to the queue group — it does not re-deliver if the consumer crashes. If your task requires at-least-once processing, have the worker publish an acknowledgement on completion, and have the dispatcher re-publish unacknowledged tasks after a timeout.
+
 ### Advertise your capabilities
 
 On startup, tell the network what you can do:
@@ -201,21 +207,29 @@ nats publish '$mq9.AI.BROADCAST.system.capability' '{
 }'
 ```
 
-Orchestrators subscribed to `$mq9.AI.BROADCAST.system.capability` learn about you and can send tasks directly to your `mail_id`.
+Any Orchestrator subscribed to `$mq9.AI.BROADCAST.system.capability` receives this and can build a live index:
+
+```bash
+# Orchestrator subscribes and collects capability announcements
+nats subscribe '$mq9.AI.BROADCAST.system.capability'
+# Each message includes "from" (the agent's mail_id) and "capabilities"
+# Build your own index: capability → [mail_id, mail_id, ...]
+# Route tasks by publishing to $mq9.AI.INBOX.{mail_id}.normal
+```
+
+There is no central registry — the Orchestrator maintains its own index from live announcements. When an Agent's mailbox TTL expires, it stops announcing. The Orchestrator can treat silence as offline.
 
 ## Protocol summary
 
 ```text
 $mq9.AI.MAILBOX.CREATE                  → get a mailbox
-$mq9.AI.MAILBOX.QUERY.{mail_id}         → pull unread messages
-$mq9.AI.INBOX.{mail_id}.urgent          → send, high priority
+$mq9.AI.MAILBOX.QUERY.{mail_id}         → pull unread messages (requires token)
+$mq9.AI.INBOX.{mail_id}.urgent          → send, high priority (no token needed)
 $mq9.AI.INBOX.{mail_id}.normal          → send, normal
 $mq9.AI.INBOX.{mail_id}.notify          → send, background
 $mq9.AI.BROADCAST.{domain}.{event}      → broadcast to subscribers
 ```
 
 Any NATS client speaks this. No additional library needed.
-
----
 
 *For integration code in Python, Go, and JavaScript — see [For Engineer](/for-engineer).*
