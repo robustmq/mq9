@@ -36,6 +36,10 @@ export default defineConfig({
 
     // Canonical
     ['link', { rel: 'canonical', href: 'https://mq9.robustmq.com' }],
+
+    // 51.la 访问统计
+    ['script', { charset: 'UTF-8', id: 'LA_COLLECT', src: '//sdk.51.la/js-sdk-pro.min.js' }],
+    ['script', {}, `LA.init({id:"3PUlhxY3LHemHVJk",ck:"3PUlhxY3LHemHVJk",autoTrack:true,hashMode:true})`],
   ],
 
   themeConfig: {
