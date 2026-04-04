@@ -1,0 +1,25 @@
+{
+  "name": "mq9",
+  "version": "1.0.0",
+  "description": "The Communication Layer for AI Agents",
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/socutes/mq9.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/socutes/mq9/issues"
+  },
+  "homepage": "https://github.com/socutes/mq9#readme",
+  "devDependencies": {
+    "vitepress": "^1.6.4"
+  }
+}
