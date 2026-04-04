@@ -13,16 +13,16 @@ mq9 is async messaging infrastructure built specifically for Agent-to-Agent comm
 
 These are the communication patterns that come up in every multi-Agent system:
 
-| # | Scenario |
-| - | - |
-| 1 | Sub-Agent sends result back to parent |
-| 2 | Orchestrator tracks the real-time state of all workers |
-| 3 | Task is broadcast to a pool of workers, only one picks it up |
-| 4 | An anomaly is detected and all relevant handlers need to know |
-| 5 | Cloud sends a command to an edge device that's currently offline |
-| 6 | An Agent requests human approval before proceeding |
-| 7 | Agent A asks Agent B a question, Agent B is offline |
-| 8 | An Agent announces its capabilities so others can discover it |
+| # | Scenario | Description |
+| - | - | - |
+| 1 | Sub-Agent sends result back to parent | A parent Agent dispatches a task to a sub-Agent and needs the result back — asynchronously. The parent may restart between dispatching and receiving. The sub-Agent may finish while the parent is temporarily offline. |
+| 2 | Orchestrator tracks real-time worker state | An orchestrator needs to know the current load, status, and health of dozens or hundreds of workers — in real time, not via polling. Workers update their state continuously. |
+| 3 | Task broadcast, one worker picks it up | A task is published to a pool of workers. Exactly one worker should handle it — not zero, not two. Workers are interchangeable and the pool size changes dynamically. |
+| 4 | Anomaly alert to all relevant handlers | A monitoring Agent detects a critical event and needs to notify multiple downstream handlers simultaneously — a logger, an incident responder, a dashboard updater. All of them, reliably. |
+| 5 | Cloud sends command to offline edge device | A cloud Agent sends a high-priority command (e.g. emergency stop) to an edge device that is currently offline or on an unreliable network. The command must be waiting when the device reconnects, and must be processed before lower-priority messages. |
+| 6 | Agent requests human approval before proceeding | An Agent reaches a decision point that requires human sign-off — e.g. spending money, calling an external API, taking an irreversible action. The human may not be available immediately. The Agent should not block. |
+| 7 | Agent A asks offline Agent B a question | Agent A needs information from Agent B, but Agent B is offline, busy, or doesn't exist yet. Agent A should send the question and continue working. Agent B answers when it comes online. |
+| 8 | Agent announces capabilities for discovery | A newly started Agent broadcasts what it can do — its skills, domains, task types. Orchestrators and other Agents subscribed to capability announcements learn about it and can start routing tasks to it immediately. |
 
 ## How teams solve these today — and where it breaks
 
@@ -74,9 +74,25 @@ These are the communication patterns that come up in every multi-Agent system:
 
 **The problem:** Dynamic Agent discovery requires infrastructure that doesn't exist off the shelf.
 
+## Why a mailbox?
+
+Agents are not services. A service runs continuously and holds a stable address. An Agent spins up for a task, does its work, and disappears. Its identity is temporary. Its communication needs are temporary too.
+
+This changes how you should think about addressing. A permanent address assigned to an ephemeral process is a mismatch — the address outlives the Agent, or worse, gets reused in ways that cause confusion. The right model is different: **communication should be scoped to the task, not the Agent.**
+
+In mq9, an Agent requests a mailbox whenever it needs one. For each task, for each communication concern, create a mailbox. Share the `mail_id` with whoever needs to reach you. When the task ends, let the mailbox expire — it cleans itself up automatically via TTL. No deregistration, no cleanup code, no lingering state.
+
+This means:
+
+- An Agent handling five parallel tasks can have five mailboxes — one per task, completely isolated.
+- An Agent can have separate mailboxes for task assignments, status broadcasts, and capability announcements.
+- When an Agent restarts, it creates a fresh mailbox. Old messages don't bleed into a new execution context.
+
+Mailboxes are cheap. Request as many as you need. The lifecycle is automatic. This is not a workaround — it's a design decision built around how Agents actually behave.
+
 ## With mq9
 
-Every Agent gets a **mailbox** — a persistent, addressed inbox.
+Every Agent gets a **mailbox** — temporary, task-scoped, built for how Agents actually work.
 
 ```text
 $mq9.AI.MAILBOX.CREATE              → create a mailbox, get a mail_id

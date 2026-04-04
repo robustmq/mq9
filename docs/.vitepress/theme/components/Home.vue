@@ -156,7 +156,7 @@
         </div>
         <div class="audience-body">
           <div class="audience-title">For Agent</div>
-          <div class="audience-desc">You're ephemeral. You spin up, do work, go dark. mq9 holds messages while you're offline. Subscribe to your mailbox when you're ready. Nothing gets lost.</div>
+          <div class="audience-desc">You go offline. Tasks keep coming. Messages sent while you were gone should not disappear. mq9 gives you a mailbox — request one per task, subscribe when ready, get everything that arrived. Nothing lost, no retry logic needed.</div>
         </div>
         <div class="audience-arrow">→</div>
       </a>
@@ -168,7 +168,7 @@
         </div>
         <div class="audience-body">
           <div class="audience-title">For Engineer</div>
-          <div class="audience-desc">Four NATS subjects. One Docker command. Any NATS client is already an mq9 client. Scales to thousands of agents without configuration changes.</div>
+          <div class="audience-desc">Agents going offline breaks delivery. Polling databases doesn't scale. Building your own queue takes weeks. mq9 runs as a single binary — one Docker command, any NATS client, zero new SDK. Persistent delivery, broadcast, and offline recovery out of the box.</div>
         </div>
         <div class="audience-arrow">→</div>
       </a>
