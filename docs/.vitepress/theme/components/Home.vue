@@ -5,14 +5,13 @@
     <div class="top-row">
 
       <section class="hero">
-        <div class="hero-eyebrow">single binary · built on NATS · no new SDK</div>
+        <div class="hero-eyebrow" style="color:#7c3aed">Every Agent deserves a mailbox.</div>
         <h1 class="hero-title">mq9</h1>
-        <p class="hero-sub">Async messaging infrastructure for AI Agents.</p>
+        <p class="hero-sub">Agent-to-Agent messaging, solved.</p>
         <p class="hero-desc">
-          Agents are ephemeral — they go offline, restart, disappear.<br>
-          mq9 is the messaging layer that keeps them connected.<br>
-          Point-to-point delivery. Broadcast. Offline recovery.<br>
-          One binary. Any NATS client. No coordination overhead.
+          Running multiple Agents?<br>
+          They need to talk to each other.<br>
+          mq9 handles it — reliably, asynchronously, at any scale.
         </p>
       </section>
 
@@ -60,15 +59,15 @@
         <div class="arrows-left">
           <div class="arrow-row">
             <div class="arrow-line solid"></div>
-            <span class="arrow-label">INBOX.urgent</span>
+            <span class="arrow-label green">INBOX.urgent</span>
           </div>
           <div class="arrow-row">
             <div class="arrow-line solid"></div>
-            <span class="arrow-label">INBOX.normal</span>
+            <span class="arrow-label green">INBOX.normal</span>
           </div>
           <div class="arrow-row">
             <div class="arrow-line broadcast"></div>
-            <span class="arrow-label">BROADCAST</span>
+            <span class="arrow-label purple">BROADCAST</span>
           </div>
         </div>
 
@@ -85,15 +84,15 @@
         <!-- Arrows center → right -->
         <div class="arrows-right">
           <div class="arrow-row">
-            <span class="arrow-label">delivered</span>
+            <span class="arrow-label green">delivered</span>
             <div class="arrow-line solid right"></div>
           </div>
           <div class="arrow-row">
-            <span class="arrow-label">delivered</span>
+            <span class="arrow-label green">delivered</span>
             <div class="arrow-line solid right"></div>
           </div>
           <div class="arrow-row">
-            <span class="arrow-label">stored → on reconnect</span>
+            <span class="arrow-label green">stored → on reconnect</span>
             <div class="arrow-line dashed right"></div>
           </div>
         </div>
@@ -120,25 +119,25 @@
       <!-- Capabilities row -->
       <div class="caps-row">
         <div class="cap-item">
-          <span class="cap-icon">⊙</span>
+          <span class="cap-icon" style="color:#16a34a">⊙</span>
           <span class="cap-title">Point-to-point</span>
           <span class="cap-desc">Deliver to a specific agent mailbox. Recipient offline? Message waits.</span>
         </div>
         <div class="cap-divider"></div>
         <div class="cap-item">
-          <span class="cap-icon">⊕</span>
+          <span class="cap-icon" style="color:#7c3aed">⊕</span>
           <span class="cap-title">Broadcast</span>
           <span class="cap-desc">Publish once. All subscribers receive. Advertise capabilities to the network.</span>
         </div>
         <div class="cap-divider"></div>
         <div class="cap-item">
-          <span class="cap-icon">⊗</span>
+          <span class="cap-icon" style="color:#16a34a">⊗</span>
           <span class="cap-title">Offline recovery</span>
           <span class="cap-desc">Agent comes back online. Pulls missed messages. Nothing lost.</span>
         </div>
         <div class="cap-divider"></div>
         <div class="cap-item">
-          <span class="cap-icon">○</span>
+          <span class="cap-icon" style="color:#7c3aed">○</span>
           <span class="cap-title">Single binary</span>
           <span class="cap-desc">One Docker command. Runs standalone. Scales to thousands of agents.</span>
         </div>
@@ -157,7 +156,7 @@
         </div>
         <div class="audience-body">
           <div class="audience-title">For Agent</div>
-          <div class="audience-desc">You're ephemeral. You spin up, do work, go dark. mq9 holds messages while you're offline. Subscribe to your mailbox when you're ready. Nothing gets lost.</div>
+          <div class="audience-desc">You go offline. Tasks keep coming. Messages sent while you were gone should not disappear. mq9 gives you a mailbox — request one per task, subscribe when ready, get everything that arrived. Nothing lost, no retry logic needed.</div>
         </div>
         <div class="audience-arrow">→</div>
       </a>
@@ -169,7 +168,7 @@
         </div>
         <div class="audience-body">
           <div class="audience-title">For Engineer</div>
-          <div class="audience-desc">Four NATS subjects. One Docker command. Any NATS client is already an mq9 client. Scales to thousands of agents without configuration changes.</div>
+          <div class="audience-desc">Agents going offline breaks delivery. Polling databases doesn't scale. Building your own queue takes weeks. mq9 runs as a single binary — one Docker command, any NATS client, zero new SDK. Persistent delivery, broadcast, and offline recovery out of the box.</div>
         </div>
         <div class="audience-arrow">→</div>
       </a>
@@ -334,7 +333,7 @@
   border-radius: 50%;
   flex-shrink: 0;
 }
-.agent-dot.online  { background: #000; }
+.agent-dot.online  { background: #16a34a; }
 .agent-dot.offline { background: #ccc; }
 
 .agent-note {
@@ -367,15 +366,15 @@
 }
 
 .arrow-line.solid {
-  background: #000;
+  background: #16a34a;
 }
 
 .arrow-line.broadcast {
-  background: repeating-linear-gradient(90deg, #000 0, #000 5px, transparent 5px, transparent 10px);
+  background: repeating-linear-gradient(90deg, #7c3aed 0, #7c3aed 5px, transparent 5px, transparent 10px);
 }
 
 .arrow-line.dashed {
-  background: repeating-linear-gradient(90deg, #aaa 0, #aaa 5px, transparent 5px, transparent 10px);
+  background: repeating-linear-gradient(90deg, #16a34a 0, #16a34a 5px, transparent 5px, transparent 10px);
 }
 
 /* arrowhead pointing right */
@@ -385,10 +384,13 @@
   right: -1px;
   top: -3px;
   border: 4px solid transparent;
-  border-left-color: #000;
+  border-left-color: #16a34a;
+}
+.arrow-line.broadcast::after {
+  border-left-color: #7c3aed;
 }
 .arrow-line.dashed::after {
-  border-left-color: #aaa;
+  border-left-color: #16a34a;
 }
 /* arrowhead pointing right on right side */
 .arrow-line.right::after {
@@ -397,10 +399,10 @@
   right: -1px;
   top: -3px;
   border: 4px solid transparent;
-  border-left-color: #000;
+  border-left-color: #16a34a;
 }
 .arrow-line.dashed.right::after {
-  border-left-color: #aaa;
+  border-left-color: #16a34a;
 }
 
 .arrows-right .arrow-row {
@@ -415,10 +417,10 @@
   right: -1px;
   top: -3px;
   border: 4px solid transparent;
-  border-left-color: #000;
+  border-left-color: #16a34a;
 }
 .arrows-right .arrow-line.dashed::before {
-  border-left-color: #aaa;
+  border-left-color: #16a34a;
 }
 
 .arrow-label {
@@ -427,12 +429,15 @@
   white-space: nowrap;
   letter-spacing: 0.02em;
 }
+.arrow-label.green  { color: #16a34a; }
+.arrow-label.purple { color: #7c3aed; }
 
 /* mq9 center box */
 .mq9-box {
   flex-shrink: 0;
   width: 120px;
   border: 1.5px solid #000;
+  border-left: 3px solid #7c3aed;
   border-radius: 6px;
   padding: 1.2rem 1rem;
   display: flex;
