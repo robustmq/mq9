@@ -1,9 +1,9 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  title: 'mq9 — Agent-to-Agent messaging, solved.',
+  title: 'mq9 — A message broker for AI Agents.',
   titleTemplate: ':title — mq9',
-  description: 'Running multiple Agents? They need to talk to each other. mq9 handles it — reliably, asynchronously, at any scale.',
+  description: 'Deploy once. Every Agent gets a mailbox. Send to any Agent — online or offline. Messages are stored and delivered when ready. Point-to-point, broadcast, offline recovery. One binary, nothing else to install.',
   lang: 'en-US',
   base: '/',
   cleanUrls: true,
@@ -23,15 +23,15 @@ export default defineConfig({
     // Open Graph
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: 'mq9' }],
-    ['meta', { property: 'og:title', content: 'mq9 — Agent-to-Agent messaging, solved.' }],
-    ['meta', { property: 'og:description', content: 'Running multiple Agents? They need to talk to each other. mq9 handles it — reliably, asynchronously, at any scale.' }],
+    ['meta', { property: 'og:title', content: 'mq9 — A message broker for AI Agents.' }],
+    ['meta', { property: 'og:description', content: 'Deploy once. Every Agent gets a mailbox. Send to any Agent — online or offline. Messages are stored and delivered when ready. Point-to-point, broadcast, offline recovery. One binary, nothing else to install.' }],
     ['meta', { property: 'og:url', content: 'https://mq9.robustmq.com' }],
     ['meta', { property: 'og:image', content: 'https://mq9.robustmq.com/og-image.png' }],
 
     // Twitter / X
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
-    ['meta', { name: 'twitter:title', content: 'mq9 — Agent-to-Agent messaging, solved.' }],
-    ['meta', { name: 'twitter:description', content: 'Running multiple Agents? They need to talk to each other. mq9 handles it — reliably, asynchronously, at any scale.' }],
+    ['meta', { name: 'twitter:title', content: 'mq9 — A message broker for AI Agents.' }],
+    ['meta', { name: 'twitter:description', content: 'Deploy once. Every Agent gets a mailbox. Send to any Agent — online or offline. Messages are stored and delivered when ready. Point-to-point, broadcast, offline recovery. One binary, nothing else to install.' }],
     ['meta', { name: 'twitter:image', content: 'https://mq9.robustmq.com/og-image.png' }],
 
     // Canonical
@@ -59,10 +59,6 @@ export default defineConfig({
     sidebar: false,
     aside: false,
 
-    footer: {
-      message: 'Built on <a href="https://github.com/robustmq/robustmq" target="_blank">RobustMQ</a>',
-      copyright: '© 2025 mq9',
-    },
 
     socialLinks: [
       { icon: 'github', link: 'https://github.com/robustmq/robustmq' },

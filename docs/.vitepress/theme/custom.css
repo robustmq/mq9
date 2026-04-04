@@ -164,9 +164,19 @@ div[class*='language-'] code {
   padding-top: 0 !important;
 }
 
+.VPPage,
+.VPContent {
+  padding-bottom: 0 !important;
+}
+
 /* Hide default VitePress home hero when using custom */
 .VPHero {
   display: none;
+}
+
+/* Hide VitePress footer globally — custom footer in Home.vue */
+.VPFooter {
+  display: none !important;
 }
 
 
