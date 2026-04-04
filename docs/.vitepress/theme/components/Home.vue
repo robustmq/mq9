@@ -225,6 +225,7 @@
   line-height: 1;
   margin: 0;
   color: #000;
+  font-family: 'Space Grotesk', sans-serif;
 }
 
 .hero-sub {
