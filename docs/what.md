@@ -1,129 +1,146 @@
 ---
 title: What is mq9
-description: The design philosophy behind mq9 — why Agents need a different communication layer.
+description: mq9 — async messaging infrastructure for AI Agents. What it is, what it solves, and how it works.
 ---
 
 # What is mq9
 
-mq9 is a communication layer designed specifically for AI Agents. Not a new message queue. Not a wrapper around Kafka. A protocol that treats Agents as the primary actor — temporary, offline-capable, ephemeral.
+Running multiple Agents? They need to talk to each other. mq9 handles it — reliably, asynchronously, at any scale.
 
-## The problem nobody solved yet
+mq9 is async messaging infrastructure built specifically for Agent-to-Agent communication. Give each Agent a mailbox. Send messages to any Agent, online or not. Messages are stored and delivered when the recipient is ready. One binary to run, any NATS client to use.
 
-Agent A finishes a task and sends the result to Agent B. Agent B is offline. The message is lost.
+## The eight scenarios mq9 solves
 
-This is the default behavior of HTTP. Redis pub/sub. Even raw NATS. None of them were built for Agents — they were built for services. Services are always online. Agents are not.
+These are the communication patterns that come up in every multi-Agent system:
 
-Today, every team building multi-Agent systems solves this differently. Some poll a shared database. Some use Redis Streams with manual consumer groups. Some build their own queue. None of it is standard. None of it is simple. And all of it breaks when Agents scale from 10 to 10,000.
+| # | Scenario |
+| - | - |
+| 1 | Sub-Agent sends result back to parent |
+| 2 | Orchestrator tracks the real-time state of all workers |
+| 3 | Task is broadcast to a pool of workers, only one picks it up |
+| 4 | An anomaly is detected and all relevant handlers need to know |
+| 5 | Cloud sends a command to an edge device that's currently offline |
+| 6 | An Agent requests human approval before proceeding |
+| 7 | Agent A asks Agent B a question, Agent B is offline |
+| 8 | An Agent announces its capabilities so others can discover it |
 
-## Why existing solutions don't fit
+## How teams solve these today — and where it breaks
 
-| | HTTP | Redis | Kafka | mq9 |
-| - | - | - | - | - |
-| Agent offline when message arrives | Lost | Lost | Survives (complex) | Survives, auto-delivered |
-| Many Agents, small messages | OK | OK | Wasteful | Native fit |
-| One-to-one async delivery | OK | Workaround | Workaround | Native |
-| Broadcast to unknown subscribers | No | Pub/sub | Topic | Native |
-| Auto-cleanup, no manual management | No | TTL hack | No | Built-in TTL |
-| No new SDK required | — | — | — | Yes |
+### 1. Sub-Agent sends result to parent
 
-**HTTP** assumes both parties are online. One goes down, the request fails.
+**Today:** Parent opens an HTTP server and waits. Sub-Agent calls back when done. If the parent restarts mid-task, the callback has nowhere to go. If the sub-Agent finishes while the parent is restarting, the result is lost.
 
-**Redis** has pub/sub but no persistence. Offline = message lost. Adding Redis Streams brings consumer group complexity that wasn't designed for ephemeral Agents.
+**The problem:** HTTP requires both sides to be online at the same time.
 
-**Kafka** is optimized for high-throughput ordered logs. Agents are temporary — they spin up for a task and disappear. Topics are permanent. The mismatch is fundamental.
+### 2. Orchestrator tracks worker states
 
-## The mailbox model
+**Today:** Workers write their state to a shared database. Orchestrator polls on an interval. The state you read is already stale. At 100 workers polling every second, the database becomes a bottleneck.
 
-The right mental model is email, not RPC.
+**The problem:** Polling is slow, noisy, and doesn't scale.
 
-When you send someone an email, you don't need them to be online. The message goes to their mailbox. They read it when they're available. You don't know when that will be. You don't need to know.
+### 3. Task broadcast, one worker picks it up
 
-Agents work the same way. mq9 gives each Agent a mailbox.
+**Today:** Put tasks in a Redis list, workers LPOP. Or use a Kafka topic with a consumer group. Redis has no delivery guarantees. Kafka requires setting up topics, partitions, and consumer groups before you can send a single message.
 
-- **Send a letter** → `INBOX.{mail_id}.{priority}` — recipient offline? Stored. Online? Delivered.
-- **Open your mailbox** → Subscribe to `$mq9.AI.INBOX.{mail_id}.*` — get pushed messages as they arrive, pull missed ones with `MAILBOX.QUERY` as fallback.
-- **Post to a bulletin board** → `BROADCAST.{domain}.{event}` — publish once, any subscriber receives it. You don't manage the audience.
-- **Mailbox expires automatically** — TTL-based cleanup. No manual deletion.
+**The problem:** Too much infrastructure for a simple "one worker handles one task" pattern.
 
-## Four commands
+### 4. Anomaly alert to all handlers
 
-mq9 exposes four commands over NATS subjects. That's the entire protocol.
+**Today:** Redis pub/sub. Works — until a handler is offline when the alert fires. The message is gone. You add persistence, now you're managing Redis Streams and consumer group offsets.
+
+**The problem:** Pub/sub with no persistence is fire-and-forget. Adding persistence adds complexity.
+
+### 5. Cloud command to offline edge device
+
+**Today:** Store commands in a database. Edge device polls on reconnect and queries for pending commands. You write the polling logic, the query logic, the ordering logic. Every team writes this from scratch.
+
+**The problem:** There's no standard "store-and-deliver-when-online" primitive.
+
+### 6. Human-in-the-loop approval
+
+**Today:** Agent sends an email or Slack message to a human. Human replies. A separate webhook or listener routes the reply back to the Agent. Now you're maintaining three integration points.
+
+**The problem:** Humans and Agents are treated as different protocol citizens. They shouldn't be.
+
+### 7. Agent A asks offline Agent B
+
+**Today:** Agent A retries the request until Agent B comes online. Retry loops with backoff, timeout handling, state tracking. Or: drop the message and accept data loss.
+
+**The problem:** No async request-reply primitive. You either block or you lose.
+
+### 8. Capability discovery
+
+**Today:** Hardcode which Agent handles which task. Or maintain a service registry. Either a config file that goes stale, or a separate registry service to build and operate.
+
+**The problem:** Dynamic Agent discovery requires infrastructure that doesn't exist off the shelf.
+
+## With mq9
+
+Every Agent gets a **mailbox** — a persistent, addressed inbox.
 
 ```text
 $mq9.AI.MAILBOX.CREATE              → create a mailbox, get a mail_id
-$mq9.AI.MAILBOX.QUERY.{mail_id}     → pull unread messages (fallback)
-$mq9.AI.INBOX.{mail_id}.{priority}  → point-to-point delivery
-$mq9.AI.BROADCAST.{domain}.{event}  → one-to-many broadcast
+$mq9.AI.INBOX.{mail_id}.{priority}  → send to an agent (stored if offline)
+$mq9.AI.BROADCAST.{domain}.{event}  → publish to all subscribers
+$mq9.AI.MAILBOX.QUERY.{mail_id}     → pull missed messages on reconnect
 ```
 
-These four commands cover every async Agent communication pattern. The [For Agent](/for-agent) page maps eight real scenarios to these four commands.
+The same four commands handle all eight scenarios:
 
-## Key design decisions
+| Scenario | How mq9 handles it |
+| - | - |
+| Sub-Agent result to parent | `INBOX.normal` + `reply_to` field |
+| Orchestrator tracks workers | Workers use `latest`-type mailbox, orchestrator subscribes once |
+| Task to one worker | `BROADCAST` + queue group subscription |
+| Alert to all handlers | `BROADCAST` + wildcard subscription |
+| Command to offline edge | `INBOX.urgent`, edge queries with `MAILBOX.QUERY` on reconnect |
+| Human approval | Human and Agent both use `INBOX` — same protocol |
+| Async request-reply | `INBOX` + `correlation_id` + `reply_to` |
+| Capability discovery | `BROADCAST.system.capability` on startup |
 
-### mail_id is not identity
+The mental model is **email, not RPC**. You send to an address. The recipient reads when ready. Neither side needs to be online at the same time.
 
-A `mail_id` is a communication channel, not an Agent's identity. One Agent can create multiple mailboxes — one for task assignments, one for status broadcasts, one for capability declarations.
+### Store-first delivery
 
-This decouples communication from identity. Agents don't persist their address. Create for a task, let it expire with the task.
+When a message arrives, mq9 writes it to storage first, then checks if the recipient is online:
 
-### Two mailbox types
+- **Online** → delivered immediately
+- **Offline** → stored, delivered on reconnect. `MAILBOX.QUERY` as a fallback safety net.
+
+### Priority
+
+```text
+$mq9.AI.INBOX.{mail_id}.urgent    → processed first
+$mq9.AI.INBOX.{mail_id}.normal    → standard
+$mq9.AI.INBOX.{mail_id}.notify    → background, shorter TTL
+```
+
+An edge device coming back online processes `urgent` first — the emergency stop sent hours ago is not buried under routine updates.
+
+### Mailbox types
 
 | Type | Behavior | Use case |
 | - | - | - |
-| `standard` | Accumulates all messages | Task requests, results, notifications |
-| `latest` | Keeps only the newest message | Status updates, state snapshots |
-
-A worker reporting its current load should use `latest` — you always want the current state, not a history of state changes.
-
-### Store first, push second
-
-When a message arrives, it is written to storage first. Then the system checks if the subscriber is online:
-
-- **Online** → push immediately (real-time path)
-- **Offline** → message waits in storage
-
-`MAILBOX.QUERY` is the final safety net — an Agent that missed pushes can pull on reconnect.
-
-### Priority levels
-
-```text
-$mq9.AI.INBOX.{mail_id}.urgent    → delivered first, persisted
-$mq9.AI.INBOX.{mail_id}.normal    → standard, persisted
-$mq9.AI.INBOX.{mail_id}.notify    → low priority, shorter TTL
-```
-
-An edge device coming back online processes `urgent` messages first — the cloud may have sent an emergency stop command hours ago.
+| `standard` | Keeps all messages | Task requests, results, approvals |
+| `latest` | Keeps only the newest | Status updates, current state |
 
 ### No new SDK
 
-mq9 runs over NATS. Go, Python, Rust, Java, JavaScript, .NET — if a NATS client exists, it's already an mq9 client. No new library to install. No new API to learn.
+mq9 runs over NATS. Go, Python, Rust, Java, JavaScript, .NET — any NATS client is already an mq9 client.
 
-## Storage tiers
+## How mq9 fits in your stack
 
-Not all messages have the same durability requirements.
+**vs. raw NATS** — NATS is fire-and-forget pub/sub. mq9 adds persistent mailboxes and store-first delivery on top of NATS. Same client, different guarantees.
 
-| Tier | Backend | Use case |
-| - | - | - |
-| Memory | RAM | Heartbeats, coordination signals (loss acceptable) |
-| Persistent | RocksDB | Task delivery, results, approvals (default) |
-| Archive | File Segment | Audit trails, compliance records |
+**vs. NATS JetStream** — JetStream gives you streams and consumers (Kafka-like). mq9 gives you mailboxes and broadcasts (email-like). Different abstractions for different problems.
 
-Each message pays for what it needs. A heartbeat doesn't need triple-replication. A financial approval does.
+**vs. Kafka** — Kafka is a high-throughput ordered log optimized for data pipelines. mq9 is optimized for ephemeral Agents exchanging small messages. Don't use mq9 as a data pipeline.
 
-## Where mq9 fits
+**vs. A2A (Google's Agent2Agent)** — A2A defines how Agents negotiate tasks at the application layer. mq9 handles reliable delivery at the transport layer. They're complementary — A2A can run over mq9.
 
-**vs. NATS JetStream** — JetStream gives you streams and consumers (Kafka-like). mq9 gives you mailboxes and broadcasts (email-like). Different abstractions. mq9 is not a replacement for JetStream — it's a layer on top that adds Agent-native semantics.
+**What mq9 is not:**
+- Not a replacement for HTTP/gRPC between always-online services
+- Not a data pipeline
+- Not an orchestration framework — it moves messages, not decisions
 
-**vs. A2A (Google's Agent2Agent protocol)** — A2A defines how Agents negotiate tasks and exchange structured messages: application layer. mq9 defines how those messages reliably arrive: transport layer. They're complementary. A2A can run over mq9 as its transport instead of HTTP.
-
-**vs. AgentMail** — AgentMail is solving Agent-to-human email (Agents sending mail to your inbox). mq9 is solving Agent-to-Agent native async communication. Different problem.
-
-## What mq9 is not
-
-- Not a replacement for HTTP/gRPC between synchronous services
-- Not a data pipeline (use Kafka for that)
-- Not trying to be all things — four commands, one problem space
-
----
-
-*Read the [For Agent](/for-agent) page to see how Agents use mq9. Read the [For Engineer](/for-engineer) page to integrate it into your stack.*
+*See [For Agent](/for-agent) to understand how Agents use mq9. See [For Engineer](/for-engineer) for integration code.*
