@@ -9,7 +9,25 @@ Running multiple Agents? They need to talk to each other. mq9 handles it — rel
 
 mq9 is async messaging infrastructure built specifically for Agent-to-Agent communication. Give each Agent a mailbox. Send messages to any Agent, online or not. Messages are stored and delivered when the recipient is ready. One binary to run, any NATS client to use.
 
+## Why a mailbox?
+
+Agents are not services. A service runs continuously and holds a stable address. An Agent spins up for a task, does its work, and disappears. Its identity is temporary. Its communication needs are temporary too.
+
+This changes how you should think about addressing. A permanent address assigned to an ephemeral process is a mismatch — the address outlives the Agent, or worse, gets reused in ways that cause confusion. The right model is different: **communication should be scoped to the task, not the Agent.**
+
+In mq9, an Agent requests a mailbox whenever it needs one. For each task, for each communication concern, create a mailbox. Share the `mail_id` with whoever needs to reach you. When the task ends, let the mailbox expire — it cleans itself up automatically via TTL. No deregistration, no cleanup code, no lingering state.
+
+This means:
+
+- An Agent handling five parallel tasks can have five mailboxes — one per task, completely isolated.
+- An Agent can have separate mailboxes for task assignments, status broadcasts, and capability announcements.
+- When an Agent restarts, it creates a fresh mailbox. Old messages don't bleed into a new execution context.
+
+Mailboxes are cheap. Request as many as you need. The lifecycle is automatic. This is not a workaround — it's a design decision built around how Agents actually behave.
+
 ## The eight scenarios mq9 solves
+
+> The subjects below omit the `$mq9.AI.` prefix for readability. Full subjects: `$mq9.AI.INBOX.{mail_id}.{priority}`, `$mq9.AI.BROADCAST.{domain}.{event}`, etc.
 
 ### 1. Sub-Agent sends result to parent {#scenario-1}
 
@@ -41,7 +59,7 @@ mq9 is async messaging infrastructure built specifically for Agent-to-Agent comm
 
 **The problem:** Pub/sub with no persistence is fire-and-forget. Adding persistence adds complexity.
 
-**With mq9:** Publish to `BROADCAST.system.anomaly`. Any Agent subscribed with a wildcard (`BROADCAST.system.*`) receives it. Handlers that were offline get the message when they reconnect via `MAILBOX.QUERY`. Persistence is built in — no extra configuration.
+**With mq9:** Publish to `BROADCAST.system.anomaly`. Any Agent subscribed with a wildcard (`BROADCAST.system.*`) receives it in real time. Note: BROADCAST is fire-and-forget — if a handler is offline when the alert fires, it misses it. For critical alerts that must survive offline handlers, send to their `INBOX` directly instead.
 
 ### 5. Cloud sends command to offline edge device {#scenario-5}
 
@@ -74,22 +92,6 @@ mq9 is async messaging infrastructure built specifically for Agent-to-Agent comm
 **The problem:** Dynamic Agent discovery requires infrastructure that doesn't exist off the shelf.
 
 **With mq9:** Agent publishes to `BROADCAST.system.capability` on startup with its skill list and `reply_to` address. Orchestrators subscribed to this channel build a live index. When an Agent goes offline (TTL expires), it disappears from the index naturally. No registry to maintain.
-
-## Why a mailbox?
-
-Agents are not services. A service runs continuously and holds a stable address. An Agent spins up for a task, does its work, and disappears. Its identity is temporary. Its communication needs are temporary too.
-
-This changes how you should think about addressing. A permanent address assigned to an ephemeral process is a mismatch — the address outlives the Agent, or worse, gets reused in ways that cause confusion. The right model is different: **communication should be scoped to the task, not the Agent.**
-
-In mq9, an Agent requests a mailbox whenever it needs one. For each task, for each communication concern, create a mailbox. Share the `mail_id` with whoever needs to reach you. When the task ends, let the mailbox expire — it cleans itself up automatically via TTL. No deregistration, no cleanup code, no lingering state.
-
-This means:
-
-- An Agent handling five parallel tasks can have five mailboxes — one per task, completely isolated.
-- An Agent can have separate mailboxes for task assignments, status broadcasts, and capability announcements.
-- When an Agent restarts, it creates a fresh mailbox. Old messages don't bleed into a new execution context.
-
-Mailboxes are cheap. Request as many as you need. The lifecycle is automatic. This is not a workaround — it's a design decision built around how Agents actually behave.
 
 ## How it works
 
@@ -141,6 +143,8 @@ await nc.publish("$mq9.AI.INBOX.m-target-001.normal",
 ```
 
 ## Quick start
+
+> Requires the NATS CLI — `brew install nats-io/nats-tools/nats` or see [nats.io](https://nats.io/download/).
 
 ```bash
 # Run mq9
