@@ -5,9 +5,7 @@ description: mq9 — async messaging infrastructure for AI Agents. What it is, w
 
 # What is mq9
 
-Running multiple Agents? They need to talk to each other. mq9 handles it — reliably, asynchronously, at any scale.
-
-mq9 is async messaging infrastructure built specifically for Agent-to-Agent communication. Give each Agent a mailbox. Send messages to any Agent, online or not. Messages are stored and delivered when the recipient is ready. One binary to run, any NATS client to use.
+mq9 is the mailbox for AI Agents. A self-hosted broker built specifically for Agent-to-Agent communication — persistent, async, priority delivery. Deploy once, every Agent gets a mailbox.
 
 ## Why a mailbox?
 
@@ -89,11 +87,13 @@ An Agent handling five parallel tasks can have five mailboxes — one per task, 
 
 Every Agent gets a **mailbox** — temporary, task-scoped, built for how Agents actually work.
 
-```text
-$mq9.AI.MAILBOX.CREATE                    → create a mailbox, get a mail_id
-$mq9.AI.MAILBOX.{mail_id}.{priority}      → send to a mailbox (stored if offline)
-$mq9.AI.MAILBOX.{mail_id}.*              → subscribe — all unexpired messages pushed immediately
-$mq9.AI.PUBLIC.LIST                       → discover all public mailboxes
+```python
+mailbox.create(ttl=3600)                           # create a mailbox
+mailbox.send(mail_id, payload, priority="normal")  # send a message
+mailbox.receive(mail_id)                           # receive messages
+mailbox.fetch(mail_id)                             # fetch mailbox contents
+mailbox.delete(mail_id, msg_id)                    # delete a message
+mailbox.list()                                     # discover public mailboxes
 ```
 
 The mental model is **email, not RPC**. You send to an address. The recipient reads when ready. Neither side needs to be online at the same time.
@@ -110,9 +110,9 @@ Subscribe = full push. Every subscription delivers all unexpired messages immedi
 ### Priority
 
 ```text
-$mq9.AI.MAILBOX.{mail_id}.high     → processed first
-$mq9.AI.MAILBOX.{mail_id}.normal   → standard
-$mq9.AI.MAILBOX.{mail_id}.low      → background
+high    → processed first
+normal  → standard
+low     → background
 ```
 
 An edge device coming back online after 8 hours processes `high` first — the emergency stop sent hours ago is not buried under routine updates.
@@ -121,57 +121,62 @@ An edge device coming back online after 8 hours processes `high` first — the e
 
 **Private mailbox** — `mail_id` is system-generated, unguessable. Share it with whoever needs to reach you. Used for point-to-point communication and task result delivery.
 
-**Public mailbox** — `mail_id` is user-defined, meaningful name. Created with `"public": true`. Automatically registered to `$mq9.AI.PUBLIC.LIST`. Used for task queues, capability announcements, shared channels.
+**Public mailbox** — `mail_id` is user-defined, meaningful name. Created with `public=True`. Automatically registered to PUBLIC.LIST. Used for task queues, capability announcements, shared channels.
 
-```bash
+```python
 # Private mailbox
-nats pub '$mq9.AI.MAILBOX.CREATE' '{"ttl": 3600}'
+mailbox.create(ttl=3600)
 # → {"mail_id": "m-uuid-001"}
 
 # Public mailbox — auto-registered to PUBLIC.LIST
-nats pub '$mq9.AI.MAILBOX.CREATE' '{"ttl": 3600, "public": true, "name": "task.queue", "desc": "main task queue"}'
+mailbox.create(ttl=3600, public=True, name="task.queue", desc="main task queue")
 # → {"mail_id": "task.queue"}
 ```
 
 ### Discover public mailboxes
 
-`$mq9.AI.PUBLIC.LIST` is broker-maintained. Subscribe once — all current public mailboxes pushed immediately, new ones pushed as they're created, expired ones pushed as they're removed.
+PUBLIC.LIST is broker-maintained. Subscribe once — all current public mailboxes pushed immediately, new ones pushed as they're created, expired ones pushed as they're removed.
 
-```bash
-nats sub '$mq9.AI.PUBLIC.LIST'
+```python
+mailbox.list()
 ```
 
 No registry service. PUBLIC.LIST is the directory.
 
-### No new SDK
+### Official SDKs
 
-mq9 runs over NATS. Any NATS client — Go, Python, Rust, JavaScript — is already an mq9 client.
+mq9 provides official SDKs for Python, Go, and JavaScript.
 
-```python
-# Python — three lines to send a message
-import nats, json, asyncio
-nc = await nats.connect("nats://localhost:4222")
-await nc.publish("$mq9.AI.MAILBOX.m-target-001.normal",
-    json.dumps({"msg_id": "msg-001", "from": "m-uuid-001", "type": "task", "payload": {"data": "..."}}).encode())
+```bash
+pip install mq9
+npm install mq9
+go get github.com/robustmq/mq9
 ```
 
 ## Quick start
-
-> Requires the NATS CLI — `brew install nats-io/nats-tools/nats` or see [nats.io](https://nats.io/download/).
 
 ```bash
 # Run mq9
 docker run -d -p 4222:4222 robustmq/robustmq:latest
 
+# Install SDK
+pip install mq9
+```
+
+```python
+from mq9 import Mailbox
+
+m = Mailbox(server="localhost:4222")
+
 # Create a mailbox
-nats pub '$mq9.AI.MAILBOX.CREATE' '{"ttl": 3600}'
-# → {"mail_id": "m-uuid-001"}
+box = m.create(ttl=3600)          # → {"mail_id": "m-uuid-001"}
 
 # Send a message
-nats pub '$mq9.AI.MAILBOX.m-uuid-001.normal' '{"msg_id":"msg-001","from":"me","payload":"hello"}'
+m.send(box["mail_id"], {"type": "task", "payload": "hello"})
 
-# Subscribe — receives all unexpired messages immediately
-nats sub '$mq9.AI.MAILBOX.m-uuid-001.*'
+# Receive — all unexpired messages pushed immediately, then realtime
+for msg in m.receive(box["mail_id"]):
+    print(msg)
 ```
 
 See [For Engineer](/for-engineer) for full integration code in Python, Go, and JavaScript.

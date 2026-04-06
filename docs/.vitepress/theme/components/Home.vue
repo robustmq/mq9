@@ -4,11 +4,10 @@
     <!-- 1. Hero: what is mq9 -->
     <section class="hero">
       <h1 class="hero-title">mq9</h1>
-      <p class="hero-sub">A message broker for AI Agents.</p>
+      <p class="hero-sub">The mailbox for AI Agents.</p>
       <p class="hero-def">
-        Deploy once. Every Agent gets a mailbox.<br>
-        Send to any Agent — online or offline. Messages are stored and delivered when ready.<br>
-        Point-to-point, broadcast, offline recovery. One binary, nothing else to install.
+        Send to any Agent — online or offline. mq9 stores it, delivers when they're back.<br>
+        Point-to-point or broadcast. Priority delivery. Self-hosted, one binary.
       </p>
     </section>
 
@@ -46,19 +45,25 @@
 
     <!-- 4. Protocol -->
     <section class="protocol-section">
-      <div class="section-label">— three subjects, complete API —</div>
+      <div class="section-label">— five operations, complete API —</div>
       <div class="protocol-wrap">
         <pre class="protocol-block"><span class="cmd-comment"># create a mailbox</span>
-<span class="cmd-subject">$mq9.AI.MAILBOX.CREATE</span>
+<span class="cmd-subject">mailbox</span>.create(ttl=3600)
 
-<span class="cmd-comment"># send to a mailbox (offline? stored, delivered on reconnect)</span>
-<span class="cmd-subject">$mq9.AI.MAILBOX.<span class="cmd-var">{mail_id}</span>.<span class="cmd-var">{priority}</span></span>
+<span class="cmd-comment"># send a message</span>
+<span class="cmd-subject">mailbox</span>.send(<span class="cmd-var">mail_id</span>, payload, priority=<span class="cmd-var">"normal"</span>)
 
-<span class="cmd-comment"># subscribe — all unexpired messages pushed immediately</span>
-<span class="cmd-subject">$mq9.AI.MAILBOX.<span class="cmd-var">{mail_id}</span>.*</span>
+<span class="cmd-comment"># receive messages</span>
+<span class="cmd-subject">mailbox</span>.receive(<span class="cmd-var">mail_id</span>)
 
-<span class="cmd-comment"># discover all public mailboxes</span>
-<span class="cmd-subject">$mq9.AI.PUBLIC.LIST</span></pre>
+<span class="cmd-comment"># fetch mailbox contents</span>
+<span class="cmd-subject">mailbox</span>.fetch(<span class="cmd-var">mail_id</span>)
+
+<span class="cmd-comment"># delete a message</span>
+<span class="cmd-subject">mailbox</span>.delete(<span class="cmd-var">mail_id</span>, <span class="cmd-var">msg_id</span>)
+
+<span class="cmd-comment"># discover public mailboxes</span>
+<span class="cmd-subject">mailbox</span>.list()</pre>
         <div class="protocol-note">Works with any NATS client — Go, Python, Rust, JavaScript. No new SDK required.</div>
       </div>
     </section>
