@@ -1,165 +1,123 @@
 # mq9
 
-The Communication Layer for AI Agents
+The mailbox for AI Agents.
 
-Agent A finishes a task and sends the result to Agent B — but Agent B is offline. The message is lost.
+Running multiple Agents? They need to talk to each other. mq9 handles it — reliably, asynchronously, at any scale.
 
-This is the problem mq9 solves. Every Agent gets a mailbox. Messages wait. When the Agent comes back online, it gets what it missed.
-
-mq9 is the fifth native protocol in [RobustMQ](https://github.com/robustmq/robustmq), purpose-built for Agent-to-Agent async communication. No new SDK needed — any NATS client is already an mq9 client.
+mq9 is a self-hosted async messaging broker built specifically for Agent-to-Agent communication. Deploy once, every Agent gets a mailbox. Send to any Agent, online or offline — mq9 stores it and delivers when they're back.
 
 ---
 
 ## Why mq9
 
-Today's AI Agents communicate with HTTP calls, Redis queues, or Kafka topics. Each works for a specific case. None of them were designed for Agents.
-
-The gap:
-
-| Need | HTTP | Redis | Kafka | mq9 |
-| ---- | ---- | ----- | ----- | --- |
-| Agent is offline when message arrives | Lost | Lost | Survives (but complex setup) | Survives, auto-delivered |
-| Many Agents, small messages | OK | OK | Wasteful | Native fit |
+| Need | HTTP | Redis pub/sub | Kafka | mq9 |
+| ---- | ---- | ------------- | ----- | --- |
+| Agent offline when message arrives | Lost | Lost | Complex setup | Stored, auto-delivered |
+| Many ephemeral Agents | OK | OK | Wasteful | Native fit |
 | One-to-one async delivery | OK | Workaround | Workaround | Native |
-| Broadcast to unknown subscribers | No | Pub/sub | Topic | Native |
+| Broadcast to unknown subscribers | No | Fire-and-forget | Topic | Public mailbox |
 | Auto-cleanup, no manual management | No | TTL hack | No | Built-in TTL |
-| Lightweight, self-hosted | Yes | Yes | Heavy | Yes |
-
-Agents are temporary. They spin up, complete a task, and go offline. They are not persistent services. The infrastructure they communicate through needs to reflect that.
+| Self-hosted, single binary | Yes | Yes | Heavy | Yes |
 
 ---
 
-## Four Commands
+## API
 
-mq9 exposes four commands over NATS subjects. That's the entire protocol.
-
-```text
-MAILBOX.CREATE              → create a mailbox, get a mail_id
-MAILBOX.QUERY.{mail_id}     → pull unread messages (fallback)
-INBOX.{mail_id}.{priority}  → send a message to a specific Agent
-BROADCAST.{domain}.{event}  → publish to all interested Agents
-```
-
-### Quick Start
-
-```bash
-# Agent A creates a mailbox
-nats req '$mq9.AI.MAILBOX.CREATE' '{}'
-# → {"mail_id": "agt-uuid-001", "token": "tok-xxx", "ttl": 86400}
-
-# Agent B sends to Agent A (works even if A is offline)
-nats pub '$mq9.AI.INBOX.agt-uuid-001.normal' '{"from":"agent-b","payload":"task done"}'
-
-# Agent A subscribes and receives
-nats sub '$mq9.AI.INBOX.agt-uuid-001.*'
-
-# Agent A broadcasts a status event
-nats pub '$mq9.AI.BROADCAST.pipeline.stage-complete' '{"stage":"preprocessing","result":"ok"}'
-
-# Other Agents subscribe to the broadcast channel
-nats sub '$mq9.AI.BROADCAST.pipeline.*'
-```
-
-### Priority Levels
-
-```text
-INBOX.{mail_id}.urgent    → delivered first, high retention
-INBOX.{mail_id}.normal    → standard delivery
-INBOX.{mail_id}.notify    → low priority, shorter TTL
-```
-
----
-
-## Core Concepts
-
-**Mailbox** — Each Agent creates a mailbox with `MAILBOX.CREATE` and gets a `mail_id`. Messages sent to that `mail_id` are stored until the Agent reads them. The mailbox has a TTL and auto-expires. No manual cleanup needed.
-
-**Inbox** — Point-to-point delivery. Agent B sends to Agent A's `mail_id`. Agent A receives it whether online now or later.
-
-**Broadcast** — Publish once to a domain/event channel. Any Agent subscribed receives it. The sender doesn't need to know who's listening.
-
-**Pull fallback** — If an Agent missed a push, it can call `MAILBOX.QUERY.{mail_id}` to pull unread messages. Push-first, pull as fallback.
-
----
-
-## Eight Scenarios, Four Commands
-
-These are the real cases mq9 is designed for:
-
-1. **Sub-Agent task completion** — Sub-Agent finishes, sends result to Master Agent's inbox. Master may be sleeping. Message waits.
-
-2. **Master Agent status awareness** — All Sub-Agents broadcast their status to `BROADCAST.pipeline.status`. Master subscribes once, knows everything.
-
-3. **Task broadcast with worker competition** — Master broadcasts a task to `BROADCAST.tasks.new`. First available Worker picks it up.
-
-4. **Anomaly alert broadcasting** — Monitoring Agent detects error, publishes to `BROADCAST.alerts.critical`. All subscribed Agents respond.
-
-5. **Cloud to offline edge device** — Cloud sends instruction to edge Agent's inbox. Edge device reconnects, gets it.
-
-6. **Human-in-the-loop workflows** — Agent sends approval request to human operator's inbox. Human approves hours later. Agent receives confirmation and continues.
-
-7. **Async request-reply between Agents** — Agent A sends request to Agent B with a reply `mail_id`. Agent B sends response to that `mail_id`. Fully async.
-
-8. **Agent capability registration and discovery** — Agents publish their capabilities to `BROADCAST.registry.announce`. Others query what's available.
-
-All eight scenarios. Four commands.
-
----
-
-## Storage Tiers
-
-mq9 uses RobustMQ's unified storage layer with three tiers:
-
-| Tier | Backend | Use case |
-| ---- | ------- | -------- |
-| Memory | In-memory | Temporary, real-time Agents |
-| Persistent | RocksDB | Short-lived but must survive restart |
-| Archive | File Segment | Long-term, audit, replay |
-
-Default is Memory with configurable TTL. Agents that need durability opt into RocksDB or File Segment.
-
----
-
-## Relationship to Other Protocols
-
-### mq9 vs A2A (Google's Agent2Agent protocol)
-
-A2A defines how Agents negotiate tasks and exchange structured messages — application layer semantics. mq9 handles how those messages are delivered — transport layer. They are complementary, not competing. A2A can run over mq9 as its transport.
-
-### mq9 vs NATS JetStream
-
-JetStream gives you durable streams and consumers. It's powerful but requires setup: stream creation, consumer configuration, retention policies. mq9 sits on top of NATS and adds Agent-native semantics: `MAILBOX.CREATE` gives you a mailbox in one call. No stream configuration. Auto-TTL. Designed for ephemeral Agents, not persistent data pipelines.
-
-### mq9 vs Kafka
-
-Kafka is optimized for high-throughput ordered logs — batch data, event sourcing, audit trails. mq9 is optimized for many lightweight Agents exchanging small, targeted messages. Different problem.
-
----
-
-## No New SDK
-
-mq9 runs over NATS. Any NATS client works.
+Six operations. That's the entire protocol.
 
 ```python
-# Python
-import nats
-nc = await nats.connect("nats://localhost:4222")
-await nc.publish("$mq9.AI.INBOX.agt-uuid-001.normal", b'{"task":"done"}')
+mb.create(ttl=3600)                              # create a mailbox
+mb.send(mail_id, payload, priority="normal")     # send a message
+mb.receive(mail_id)                              # receive messages (all unexpired + realtime)
+mb.fetch(mail_id)                                # fetch mailbox contents
+mb.delete(mail_id, msg_id)                       # delete a message
+mb.list()                                        # discover public mailboxes
 ```
 
-```go
-// Go
-nc, _ := nats.Connect("nats://localhost:4222")
-nc.Publish("$mq9.AI.INBOX.agt-uuid-001.normal", []byte(`{"task":"done"}`))
+### Quick start
+
+```bash
+docker run -d --name mq9 -p 4222:4222 mq9/mq9:latest
+pip install mq9
 ```
 
-```javascript
-// JavaScript / Node.js
-const nc = await connect({ servers: "nats://localhost:4222" });
-nc.publish("$mq9.AI.INBOX.agt-uuid-001.normal", encode('{"task":"done"}'));
+```python
+from mq9 import Mailbox
+
+mb = Mailbox("nats://localhost:4222")
+
+# Create mailboxes
+agent_a = mb.create(ttl=3600)   # → {"mail_id": "m-uuid-001"}
+agent_b = mb.create(ttl=3600)   # → {"mail_id": "m-uuid-002"}
+
+# Agent A sends to Agent B (even if B is offline)
+mb.send(agent_b["mail_id"], {
+    "from": agent_a["mail_id"],
+    "type": "task",
+    "payload": "analyze this"
+})
+
+# Agent B subscribes — gets all pending messages immediately, then realtime
+mb.receive(agent_b["mail_id"], callback=lambda msg: print(msg))
 ```
 
-Go, Python, Rust, Java, JavaScript, .NET — if there's a NATS client, it's an mq9 client.
+### Priority
+
+```text
+high    → processed first
+normal  → standard
+low     → background
+```
+
+### Private and public mailboxes
+
+**Private** — `mail_id` is system-generated and unguessable. Share it with whoever needs to reach you. Security boundary: knowing the `mail_id` is the only credential needed.
+
+**Public** — user-defined name, auto-registered to PUBLIC.LIST. Used for task queues, capability announcements, broadcast channels.
+
+```python
+# Public mailbox — discoverable via mb.list()
+mb.create(ttl=86400, public=True, name="task.queue", desc="main task queue")
+
+# Competing workers — only one Agent handles each message
+mb.receive("task.queue", resume="workers", callback=handle_task)
+```
+
+---
+
+## Eight scenarios mq9 solves
+
+1. **Sub-Agent reports result to parent** — Parent may be sleeping. Message waits, delivered on reconnect.
+2. **Orchestrator tracks worker state** — Workers create public mailboxes, orchestrator subscribes. TTL expiry = offline signal.
+3. **Task broadcast, one worker picks it up** — Public mailbox + resume group. No coordination needed.
+4. **Alert to all handlers** — Public mailbox. Handlers that were offline get all unexpired alerts on reconnect.
+5. **Cloud to offline edge device** — Send with `high` priority. Edge reconnects, gets it first.
+6. **Human-in-the-loop approval** — Send to human's mailbox. Human replies with same SDK. No webhooks.
+7. **Async request-reply** — Send with `reply_to`. Recipient replies when ready. No blocking, no retries.
+8. **Capability discovery** — Create a public mailbox on startup. Orchestrators subscribe to `mb.list()`. TTL expiry removes you automatically.
+
+---
+
+## How it works
+
+**Store-first delivery.** When a message arrives, mq9 writes it to storage first, then checks if the recipient is online:
+
+- Online → delivered immediately
+- Offline → stored, delivered on next `mb.receive()`
+
+`mb.receive()` = full push. All unexpired messages are pushed immediately when you subscribe, then new arrivals stream in real-time. No separate pull needed.
+
+---
+
+## Relationship to other tools
+
+**vs. raw NATS** — NATS Core is fire-and-forget. mq9 adds persistent mailboxes and store-first delivery.
+
+**vs. NATS JetStream** — JetStream is streams and consumers (Kafka-like). mq9 is mailboxes (email-like). Lighter — no stream config, no offset management.
+
+**vs. Kafka** — Kafka is a high-throughput ordered log for data pipelines. mq9 is for ephemeral Agents exchanging small messages.
+
+**vs. A2A (Google's Agent2Agent)** — A2A defines application-layer task negotiation. mq9 handles transport-layer delivery. They're complementary — A2A can run over mq9.
 
 ---
 
@@ -168,14 +126,9 @@ Go, Python, Rust, Java, JavaScript, .NET — if there's a NATS client, it's an m
 mq9 is under active development as part of [RobustMQ](https://github.com/robustmq/robustmq).
 
 - Protocol design: complete
-- Core commands implemented and validated
-- Multi-protocol unified storage: working
+- Core operations implemented and validated
 - Production hardening: in progress
 
----
-
-## Built On
-
-mq9 is the fifth native protocol in RobustMQ, alongside MQTT, Kafka, NATS, and AMQP. It shares the same unified storage engine and multi-tenant architecture.
+mq9 is the fifth native protocol in RobustMQ, alongside MQTT, Kafka, NATS, and AMQP.
 
 RobustMQ repository: [github.com/robustmq/robustmq](https://github.com/robustmq/robustmq)
