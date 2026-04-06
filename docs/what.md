@@ -13,95 +13,87 @@ mq9 is async messaging infrastructure built specifically for Agent-to-Agent comm
 
 Agents are not services. A service runs continuously and holds a stable address. An Agent spins up for a task, does its work, and disappears. Its identity is temporary. Its communication needs are temporary too.
 
-This changes how you should think about addressing. A permanent address assigned to an ephemeral process is a mismatch — the address outlives the Agent, or worse, gets reused in ways that cause confusion. The right model is different: **communication should be scoped to the task, not the Agent.**
+In mq9, an Agent requests a mailbox whenever it needs one. The `mail_id` is its address for that task. When the task ends, let the mailbox expire — it cleans itself up automatically via TTL. No deregistration, no cleanup code, no lingering state.
 
-In mq9, an Agent requests a mailbox whenever it needs one. For each task, for each communication concern, create a mailbox. Share the `mail_id` with whoever needs to reach you. When the task ends, let the mailbox expire — it cleans itself up automatically via TTL. No deregistration, no cleanup code, no lingering state.
+**mail_id unguessability is the security boundary.** The `mail_id` is a system-generated unguessable string. Know the `mail_id` and you can send to it, subscribe to it. Don't know it — you can't touch it. No tokens, no ACL, no auth layer.
 
-This means:
-
-- An Agent handling five parallel tasks can have five mailboxes — one per task, completely isolated.
-- An Agent can have separate mailboxes for task assignments, status broadcasts, and capability announcements.
-- When an Agent restarts, it creates a fresh mailbox. Old messages don't bleed into a new execution context.
-
-Mailboxes are cheap. Request as many as you need. The lifecycle is automatic. This is not a workaround — it's a design decision built around how Agents actually behave.
+An Agent handling five parallel tasks can have five mailboxes — one per task, completely isolated.
 
 ## The eight scenarios mq9 solves
 
-> The subjects below omit the `$mq9.AI.` prefix for readability. Full subjects: `$mq9.AI.INBOX.{mail_id}.{priority}`, `$mq9.AI.BROADCAST.{domain}.{event}`, etc.
+### 1. Sub-Agent sends result to parent
 
-### 1. Sub-Agent sends result to parent {#scenario-1}
-
-**Today:** Parent opens an HTTP server and waits. Sub-Agent calls back when done. If the parent restarts mid-task, the callback has nowhere to go. If the sub-Agent finishes while the parent is restarting, the result is lost.
+**Today:** Parent opens an HTTP server and waits. If the parent restarts mid-task, the callback has nowhere to go. Result lost.
 
 **The problem:** HTTP requires both sides to be online at the same time.
 
-**With mq9:** Sub-Agent publishes to `INBOX.{parent_id}.normal` with a `correlation_id`. Parent subscribes to its inbox — messages arrive whether the parent was online or not. No HTTP server, no retry logic.
+**With mq9:** Sub-Agent publishes to the parent's mailbox with a `correlation_id`. Parent subscribes to its mailbox — all messages that arrived while it was offline are pushed immediately on subscribe. No HTTP server, no retry logic.
 
-### 2. Orchestrator tracks real-time worker state {#scenario-2}
+### 2. Orchestrator tracks real-time worker state
 
-**Today:** Workers write their state to a shared database. Orchestrator polls on an interval. The state you read is already stale. At 100 workers polling every second, the database becomes a bottleneck.
+**Today:** Workers write their state to a shared database. Orchestrator polls on an interval. At 100 workers polling every second, the database becomes a bottleneck.
 
 **The problem:** Polling is slow, noisy, and doesn't scale.
 
-**With mq9:** Each worker creates a `latest`-type mailbox and publishes its state continuously. The orchestrator subscribes once to `INBOX.m-status-*.normal` — always sees the current state, never a history. When a worker's TTL expires, its state disappears. The orchestrator knows it's gone.
+**With mq9:** Each worker creates a public mailbox and publishes its state continuously. Orchestrator subscribes — always sees the current state. When a worker's mailbox TTL expires, it disappears from PUBLIC.LIST. Orchestrator knows it's gone.
 
-### 3. Task broadcast, one worker picks it up {#scenario-3}
+### 3. Task broadcast, one worker picks it up
 
-**Today:** Put tasks in a Redis list, workers LPOP. Or use a Kafka topic with a consumer group. Redis has no delivery guarantees. Kafka requires setting up topics, partitions, and consumer groups before you can send a single message.
+**Today:** Put tasks in a Redis list, workers LPOP. Or use a Kafka topic with a consumer group. Too much infrastructure for a simple "one worker handles one task" pattern.
 
-**The problem:** Too much infrastructure for a simple "one worker handles one task" pattern.
+**The problem:** No lightweight competing-consumer primitive.
 
-**With mq9:** Publish to `BROADCAST.task.available`. All workers subscribe with the same queue group name. Each task goes to exactly one worker. No coordination, no duplicate processing, no infrastructure to configure.
+**With mq9:** Create a public mailbox for the task queue. All workers subscribe with the same queue group name. Each task goes to exactly one worker. No coordination, no duplicate processing.
 
-### 4. Anomaly alert to all handlers {#scenario-4}
+### 4. Anomaly alert to all handlers
 
-**Today:** Redis pub/sub. Works — until a handler is offline when the alert fires. The message is gone. You add persistence, now you're managing Redis Streams and consumer group offsets.
+**Today:** Redis pub/sub — until a handler is offline when the alert fires. Message gone.
 
-**The problem:** Pub/sub with no persistence is fire-and-forget. Adding persistence adds complexity.
+**The problem:** Pub/sub with no persistence is fire-and-forget.
 
-**With mq9:** Publish to `BROADCAST.system.anomaly`. Any Agent subscribed with a wildcard (`BROADCAST.system.*`) receives it in real time. Note: BROADCAST is fire-and-forget — if a handler is offline when the alert fires, it misses it. For critical alerts that must survive offline handlers, send to their `INBOX` directly instead.
+**With mq9:** Create a public mailbox for alerts. Any Agent subscribed gets it in real-time. Handlers that were offline receive all unexpired alerts the moment they subscribe. No messages lost within TTL window.
 
-### 5. Cloud sends command to offline edge device {#scenario-5}
+### 5. Cloud sends command to offline edge device
 
-**Today:** Store commands in a database. Edge device polls on reconnect and queries for pending commands. You write the polling logic, the query logic, the ordering logic. Every team writes this from scratch.
+**Today:** Store commands in a database. Edge device polls on reconnect and queries for pending commands. Every team writes this from scratch.
 
 **The problem:** There's no standard "store-and-deliver-when-online" primitive.
 
-**With mq9:** Cloud publishes to `INBOX.{edge_id}.urgent`. mq9 stores it. Edge device reconnects, subscribes to its inbox, and gets all pending messages — urgent first. One `MAILBOX.QUERY` call as a fallback safety net. No custom polling code.
+**With mq9:** Cloud publishes to the edge device's mailbox with `high` priority. mq9 stores it. Edge device reconnects, subscribes to its mailbox — all pending messages pushed immediately, high priority first.
 
-### 6. Agent requests human approval before proceeding {#scenario-6}
+### 6. Agent requests human approval before proceeding
 
-**Today:** Agent sends an email or Slack message to a human. Human replies. A separate webhook or listener routes the reply back to the Agent. Now you're maintaining three integration points.
+**Today:** Agent sends an email or Slack message. A webhook routes the reply back. Three integration points to maintain.
 
-**The problem:** Humans and Agents are treated as different protocol citizens. They shouldn't be.
+**The problem:** Humans and Agents are treated as different protocol citizens.
 
-**With mq9:** The Agent sends an approval request to the human's `mail_id` via `INBOX.urgent`, with a `reply_to` address. The human's client subscribes to their inbox — same protocol, same client. Human replies directly. No webhooks, no routing middleware.
+**With mq9:** Agent sends an approval request to the human's mailbox with `reply_to` set. The human's client subscribes to their mailbox — same protocol, same NATS client. Human replies directly. No webhooks, no routing middleware.
 
-### 7. Agent A asks offline Agent B a question {#scenario-7}
+### 7. Agent A asks offline Agent B a question
 
-**Today:** Agent A retries the request until Agent B comes online. Retry loops with backoff, timeout handling, state tracking. Or: drop the message and accept data loss.
+**Today:** Agent A retries until Agent B comes online. Retry loops, timeout handling, state tracking. Or: drop the message and accept data loss.
 
-**The problem:** No async request-reply primitive. You either block or you lose.
+**The problem:** No async request-reply primitive.
 
-**With mq9:** Agent A publishes a question to `INBOX.{agent_b}.normal` with a `correlation_id` and `reply_to` set to its own inbox. Agent A continues working. Agent B comes online, processes the question, replies to `reply_to`. Agent A collects the answer when it arrives. No blocking, no retries.
+**With mq9:** Agent A publishes a question to Agent B's mailbox with `correlation_id` and `reply_to` set to its own mailbox. Agent A continues working. Agent B comes online, gets the question from its mailbox, replies. Agent A collects the answer when it arrives. No blocking, no retries.
 
-### 8. Agent announces capabilities for discovery {#scenario-8}
+### 8. Agent announces capabilities for discovery
 
-**Today:** Hardcode which Agent handles which task. Or maintain a service registry. Either a config file that goes stale, or a separate registry service to build and operate.
+**Today:** Hardcode which Agent handles which task. Or maintain a service registry — a config file that goes stale, or a separate registry service to build.
 
 **The problem:** Dynamic Agent discovery requires infrastructure that doesn't exist off the shelf.
 
-**With mq9:** Agent publishes to `BROADCAST.system.capability` on startup with its skill list and `reply_to` address. Orchestrators subscribed to this channel build a live index. When an Agent goes offline (TTL expires), it disappears from the index naturally. No registry to maintain.
+**With mq9:** Agent creates a public mailbox on startup with a meaningful name like `agent.analysis.v1`. It's automatically registered to `$mq9.AI.PUBLIC.LIST`. Orchestrators subscribe to PUBLIC.LIST — they see all public mailboxes in real-time. When an Agent's mailbox TTL expires, it disappears from PUBLIC.LIST automatically. No registry to maintain.
 
 ## How it works
 
 Every Agent gets a **mailbox** — temporary, task-scoped, built for how Agents actually work.
 
 ```text
-$mq9.AI.MAILBOX.CREATE              → create a mailbox, get a mail_id
-$mq9.AI.INBOX.{mail_id}.{priority}  → send to an agent (stored if offline)
-$mq9.AI.BROADCAST.{domain}.{event}  → publish to all subscribers
-$mq9.AI.MAILBOX.QUERY.{mail_id}     → pull missed messages on reconnect
+$mq9.AI.MAILBOX.CREATE                    → create a mailbox, get a mail_id
+$mq9.AI.MAILBOX.{mail_id}.{priority}      → send to a mailbox (stored if offline)
+$mq9.AI.MAILBOX.{mail_id}.*              → subscribe — all unexpired messages pushed immediately
+$mq9.AI.PUBLIC.LIST                       → discover all public mailboxes
 ```
 
 The mental model is **email, not RPC**. You send to an address. The recipient reads when ready. Neither side needs to be online at the same time.
@@ -111,35 +103,56 @@ The mental model is **email, not RPC**. You send to an address. The recipient re
 When a message arrives, mq9 writes it to storage first, then checks if the recipient is online:
 
 - **Online** → delivered immediately
-- **Offline** → stored, delivered on reconnect. `MAILBOX.QUERY` as a fallback safety net.
+- **Offline** → stored, delivered on next subscribe
+
+Subscribe = full push. Every subscription delivers all unexpired messages immediately, then streams new arrivals in real-time. No separate QUERY command needed.
 
 ### Priority
 
 ```text
-$mq9.AI.INBOX.{mail_id}.urgent    → processed first
-$mq9.AI.INBOX.{mail_id}.normal    → standard
-$mq9.AI.INBOX.{mail_id}.notify    → background, shorter TTL
+$mq9.AI.MAILBOX.{mail_id}.high     → processed first
+$mq9.AI.MAILBOX.{mail_id}.normal   → standard
+$mq9.AI.MAILBOX.{mail_id}.low      → background
 ```
 
-An edge device coming back online processes `urgent` first — the emergency stop sent hours ago is not buried under routine updates.
+An edge device coming back online after 8 hours processes `high` first — the emergency stop sent hours ago is not buried under routine updates.
 
-### Mailbox types
+### Private and public mailboxes
 
-| Type | Behavior | Use case |
-| - | - | - |
-| `standard` | Keeps all messages | Task requests, results, approvals |
-| `latest` | Keeps only the newest | Status updates, current state |
+**Private mailbox** — `mail_id` is system-generated, unguessable. Share it with whoever needs to reach you. Used for point-to-point communication and task result delivery.
+
+**Public mailbox** — `mail_id` is user-defined, meaningful name. Created with `"public": true`. Automatically registered to `$mq9.AI.PUBLIC.LIST`. Used for task queues, capability announcements, shared channels.
+
+```bash
+# Private mailbox
+nats pub '$mq9.AI.MAILBOX.CREATE' '{"ttl": 3600}'
+# → {"mail_id": "m-uuid-001"}
+
+# Public mailbox — auto-registered to PUBLIC.LIST
+nats pub '$mq9.AI.MAILBOX.CREATE' '{"ttl": 3600, "public": true, "name": "task.queue", "desc": "main task queue"}'
+# → {"mail_id": "task.queue"}
+```
+
+### Discover public mailboxes
+
+`$mq9.AI.PUBLIC.LIST` is broker-maintained. Subscribe once — all current public mailboxes pushed immediately, new ones pushed as they're created, expired ones pushed as they're removed.
+
+```bash
+nats sub '$mq9.AI.PUBLIC.LIST'
+```
+
+No registry service. PUBLIC.LIST is the directory.
 
 ### No new SDK
 
-mq9 runs over NATS. Any NATS client — Go, Python, Rust, JavaScript — is already an mq9 client. No new library to install.
+mq9 runs over NATS. Any NATS client — Go, Python, Rust, JavaScript — is already an mq9 client.
 
 ```python
 # Python — three lines to send a message
 import nats, json, asyncio
 nc = await nats.connect("nats://localhost:4222")
-await nc.publish("$mq9.AI.INBOX.m-target-001.normal",
-    json.dumps({"from": "m-uuid-001", "type": "task", "payload": {"data": "..."}}).encode())
+await nc.publish("$mq9.AI.MAILBOX.m-target-001.normal",
+    json.dumps({"msg_id": "msg-001", "from": "m-uuid-001", "type": "task", "payload": {"data": "..."}}).encode())
 ```
 
 ## Quick start
@@ -151,29 +164,30 @@ await nc.publish("$mq9.AI.INBOX.m-target-001.normal",
 docker run -d -p 4222:4222 robustmq/robustmq:latest
 
 # Create a mailbox
-nats request '$mq9.AI.MAILBOX.CREATE' '{"type":"standard","ttl":3600}'
-# → {"mail_id":"m-uuid-001","token":"tok-xxx"}
+nats pub '$mq9.AI.MAILBOX.CREATE' '{"ttl": 3600}'
+# → {"mail_id": "m-uuid-001"}
 
 # Send a message
-nats publish '$mq9.AI.INBOX.m-uuid-001.normal' '{"from":"me","payload":"hello"}'
+nats pub '$mq9.AI.MAILBOX.m-uuid-001.normal' '{"msg_id":"msg-001","from":"me","payload":"hello"}'
 
-# Subscribe
-nats subscribe '$mq9.AI.INBOX.m-uuid-001.*'
+# Subscribe — receives all unexpired messages immediately
+nats sub '$mq9.AI.MAILBOX.m-uuid-001.*'
 ```
 
 See [For Engineer](/for-engineer) for full integration code in Python, Go, and JavaScript.
 
 ## How mq9 fits in your stack
 
-**vs. raw NATS** — NATS is fire-and-forget pub/sub. mq9 adds persistent mailboxes and store-first delivery on top of NATS. Same client, different guarantees.
+**vs. raw NATS** — NATS Core is fire-and-forget pub/sub. mq9 adds persistent mailboxes and store-first delivery on top of NATS. Same client, different guarantees.
 
-**vs. NATS JetStream** — JetStream gives you streams and consumers (Kafka-like). mq9 gives you mailboxes and broadcasts (email-like). Different abstractions for different problems.
+**vs. NATS JetStream** — JetStream gives you streams and consumers (Kafka-like). mq9 gives you mailboxes (email-like). Different abstractions for different problems. mq9 is lighter — no stream, no consumer group, no offset management.
 
 **vs. Kafka** — Kafka is a high-throughput ordered log optimized for data pipelines. mq9 is optimized for ephemeral Agents exchanging small messages. Don't use mq9 as a data pipeline.
 
 **vs. A2A (Google's Agent2Agent)** — A2A defines how Agents negotiate tasks at the application layer. mq9 handles reliable delivery at the transport layer. They're complementary — A2A can run over mq9.
 
 **What mq9 is not:**
+
 - Not a replacement for HTTP/gRPC between always-online services
 - Not a data pipeline
 - Not an orchestration framework — it moves messages, not decisions
