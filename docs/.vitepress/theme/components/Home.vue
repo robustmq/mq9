@@ -46,19 +46,19 @@
 
     <!-- 4. Protocol -->
     <section class="protocol-section">
-      <div class="section-label">— four subjects, complete API —</div>
+      <div class="section-label">— three subjects, complete API —</div>
       <div class="protocol-wrap">
         <pre class="protocol-block"><span class="cmd-comment"># create a mailbox</span>
 <span class="cmd-subject">$mq9.AI.MAILBOX.CREATE</span>
 
-<span class="cmd-comment"># send to an agent (offline? stored, delivered on reconnect)</span>
-<span class="cmd-subject">$mq9.AI.INBOX.<span class="cmd-var">{mail_id}</span>.<span class="cmd-var">{priority}</span></span>
+<span class="cmd-comment"># send to a mailbox (offline? stored, delivered on reconnect)</span>
+<span class="cmd-subject">$mq9.AI.MAILBOX.<span class="cmd-var">{mail_id}</span>.<span class="cmd-var">{priority}</span></span>
 
-<span class="cmd-comment"># broadcast to all subscribers</span>
-<span class="cmd-subject">$mq9.AI.BROADCAST.<span class="cmd-var">{domain}</span>.<span class="cmd-var">{event}</span></span>
+<span class="cmd-comment"># subscribe — all unexpired messages pushed immediately</span>
+<span class="cmd-subject">$mq9.AI.MAILBOX.<span class="cmd-var">{mail_id}</span>.*</span>
 
-<span class="cmd-comment"># pull missed messages after reconnect</span>
-<span class="cmd-subject">$mq9.AI.MAILBOX.QUERY.<span class="cmd-var">{mail_id}</span></span></pre>
+<span class="cmd-comment"># discover all public mailboxes</span>
+<span class="cmd-subject">$mq9.AI.PUBLIC.LIST</span></pre>
         <div class="protocol-note">Works with any NATS client — Go, Python, Rust, JavaScript. No new SDK required.</div>
       </div>
     </section>
@@ -74,8 +74,8 @@
         <div class="cap-divider"></div>
         <div class="cap-item">
           <span class="cap-icon" style="color:#7c3aed">⊕</span>
-          <span class="cap-title">Broadcast</span>
-          <span class="cap-desc">Publish once. All subscribers receive. No subscriber list to manage.</span>
+          <span class="cap-title">Public mailboxes</span>
+          <span class="cap-desc">Create a named public mailbox. Any Agent can discover it via PUBLIC.LIST and subscribe. No registry to maintain.</span>
         </div>
         <div class="cap-divider"></div>
         <div class="cap-item">

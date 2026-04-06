@@ -1,6 +1,6 @@
 ---
 title: For Agent — mq9 Agent Manual
-description: How AI Agents use mq9 — mailbox, inbox, broadcast, offline handling.
+description: How AI Agents use mq9 — mailbox, send, subscribe, public channels, offline handling.
 ---
 
 # For Agent
@@ -17,19 +17,19 @@ Standard communication tools weren't built for this:
 
 - **HTTP** requires both sides to be online at the same time. You go offline — the message is gone.
 - **Redis pub/sub** has no persistence. Miss the publish window — miss the message.
-- **Direct NATS** is fire-and-forget. No delivery guarantee when you're offline.
+- **Direct NATS Core** is fire-and-forget. No delivery guarantee when you're offline.
 
 The result: other Agents can't reliably reach you. You can't reliably reach them. Every team builds their own workaround. None of it scales.
 
 ## What mq9 gives you
 
-mq9 gives every Agent a **mailbox** — a persistent inbox that holds messages until you're ready to receive them.
+mq9 gives every Agent a **mailbox** — a persistent address that holds messages until you're ready to receive them.
 
 - Send a message to any Agent, whether they're online or not. mq9 stores it.
-- Subscribe to your mailbox when you start up. mq9 pushes everything that arrived while you were gone.
-- Broadcast your capabilities or events to the network. You don't manage the subscriber list.
-- Messages have priority. Urgent commands get processed first.
-- Mailboxes expire automatically. No manual cleanup.
+- Subscribe to your mailbox when you start up. mq9 pushes everything that arrived while you were gone — all at once, immediately.
+- Create public mailboxes for channels that any Agent can find and subscribe to.
+- Messages have priority. High-priority commands get processed first.
+- Mailboxes expire automatically via TTL. No manual cleanup.
 
 The mental model is **email, not RPC**. You send to an address. The recipient reads when ready. Neither side needs to be online at the same time.
 
@@ -40,52 +40,42 @@ The mental model is **email, not RPC**. You send to an address. The recipient re
 Before other Agents can reach you, you need an address.
 
 ```bash
-nats request '$mq9.AI.MAILBOX.CREATE' '{"type":"standard","ttl":3600}'
+nats pub '$mq9.AI.MAILBOX.CREATE' '{"ttl": 3600}'
 ```
 
 Response:
 
 ```json
-{
-  "mail_id": "m-uuid-001",
-  "token": "tok-xxx",
-  "inbox": "$mq9.AI.INBOX.m-uuid-001"
-}
+{"mail_id": "m-uuid-001"}
 ```
 
 - `mail_id` — your address. Share this with Agents who need to reach you. Anyone who knows your `mail_id` can send you a message — just like email.
-- `token` — used only for reading and managing your mailbox (`MAILBOX.QUERY`). Sending messages to another Agent does not require their token. Keep your token private.
 - `ttl` — your mailbox lives for 3600 seconds, then auto-expires. Messages inside expire with it.
-
-**Two mailbox types:**
-
-| Type | Behavior | When to use |
-| - | - | - |
-| `standard` | Keeps all messages | Task requests, results, approvals |
-| `latest` | Keeps only the newest | Status updates, current state |
-
-If you're reporting your current load to an orchestrator, use `latest`. The orchestrator wants your current state, not a history of every state you've been in.
+- **Security:** `mail_id` is system-generated and unguessable. Knowing the `mail_id` is all the authorization needed to send or subscribe. No tokens, no ACL.
 
 **You can have multiple mailboxes** — one per communication concern:
 
 ```bash
 # For incoming task assignments
-nats request '$mq9.AI.MAILBOX.CREATE' '{"type":"standard","ttl":7200}'
+nats pub '$mq9.AI.MAILBOX.CREATE' '{"ttl": 7200}'
 
-# For broadcasting your status
-nats request '$mq9.AI.MAILBOX.CREATE' '{"type":"latest","ttl":7200}'
+# Public mailbox — any Agent can discover it via PUBLIC.LIST
+nats pub '$mq9.AI.MAILBOX.CREATE' '{"ttl": 86400, "public": true, "name": "my.status", "desc": "my status updates"}'
 ```
+
+**CREATE is idempotent.** Calling CREATE again with the same public name returns success silently — TTL stays from the first creation.
 
 ### Send a message
 
-You know another Agent's `mail_id`. Send to it. They may be offline. That's fine.
+You know another Agent's `mail_id`. Send to it. They may be offline. That's fine — mq9 stores it.
 
 ```bash
-nats publish '$mq9.AI.INBOX.m-target-001.normal' '{
+nats pub '$mq9.AI.MAILBOX.m-target-001.normal' '{
+  "msg_id": "msg-uuid-001",
   "from": "m-uuid-001",
   "type": "task",
   "correlation_id": "req-001",
-  "reply_to": "$mq9.AI.INBOX.m-uuid-001.normal",
+  "reply_to": "m-uuid-001",
   "payload": { "task": "analyze", "data": "..." }
 }'
 ```
@@ -93,43 +83,50 @@ nats publish '$mq9.AI.INBOX.m-target-001.normal' '{
 **Priority levels** — recipient processes higher priority first:
 
 ```text
-$mq9.AI.INBOX.{mail_id}.urgent    → processed first
-$mq9.AI.INBOX.{mail_id}.normal    → standard
-$mq9.AI.INBOX.{mail_id}.notify    → background, shorter TTL
+$mq9.AI.MAILBOX.{mail_id}.high     → urgent, processed first
+$mq9.AI.MAILBOX.{mail_id}.normal   → standard
+$mq9.AI.MAILBOX.{mail_id}.low      → background, not urgent
 ```
 
-**Message fields:**
+**Message fields (recommended, not enforced):**
 
 | Field | Purpose |
 | - | - |
+| `msg_id` | Unique ID — use for client-side deduplication |
 | `from` | Your `mail_id` |
 | `type` | Message kind: `task`, `result`, `question`, `approval_request`, … |
 | `correlation_id` | Links a message to its reply |
-| `reply_to` | Subject where you want the response sent |
-| `payload` | The actual content |
+| `reply_to` | The `mail_id` where you want the response sent |
+| `payload` | The actual content — mq9 does not inspect or validate it |
 
-**Message TTL:** Messages are stored as long as the recipient's mailbox is alive. If the mailbox TTL is 1 hour and the recipient comes online 3 hours later, the mailbox — and its messages — have already expired. Set `ttl` high enough for your expected offline window, or use `MAILBOX.QUERY` to check on reconnect.
+mq9 treats the message body as an opaque byte array. The fields above are a convention, not a protocol requirement.
+
+**Message TTL:** Messages are stored as long as the recipient's mailbox is alive. Set `ttl` high enough for your expected offline window.
 
 ### Receive messages
 
-Subscribe to your inbox. mq9 pushes messages in real-time — including anything that arrived while you were offline.
+Subscribe to your mailbox. mq9 immediately pushes **all unexpired messages** that arrived while you were offline, then streams new arrivals in real-time.
 
 ```bash
 # All priority levels
-nats subscribe '$mq9.AI.INBOX.m-uuid-001.*'
+nats sub '$mq9.AI.MAILBOX.m-uuid-001.*'
 
-# Urgent only
-nats subscribe '$mq9.AI.INBOX.m-uuid-001.urgent'
+# High priority only
+nats sub '$mq9.AI.MAILBOX.m-uuid-001.high'
 ```
+
+Subscribe = query + realtime stream. There is no separate QUERY command. The moment you subscribe, you get everything.
 
 When a message arrives:
 
 1. Inspect `type` to understand what's expected.
-2. Process the payload.
-3. If `reply_to` is set, send your result there.
+2. Use `msg_id` to deduplicate if needed (server does not track consumed state).
+3. Process the payload.
+4. If `reply_to` is set, send your result to that `mail_id`.
 
 ```bash
-nats publish '$mq9.AI.INBOX.m-sender-001.normal' '{
+nats pub '$mq9.AI.MAILBOX.m-sender-001.normal' '{
+  "msg_id": "reply-uuid-001",
   "from": "m-uuid-001",
   "type": "task_result",
   "correlation_id": "req-001",
@@ -137,97 +134,78 @@ nats publish '$mq9.AI.INBOX.m-sender-001.normal' '{
 }'
 ```
 
-### Recover missed messages
-
-If you reconnect after being offline and want to confirm nothing slipped through:
+**Forbidden subscriptions:**
 
 ```bash
-nats request '$mq9.AI.MAILBOX.QUERY.m-uuid-001' '{"token":"tok-xxx"}'
+nats sub '$mq9.AI.MAILBOX.*'   # rejected by broker
+nats sub '$mq9.AI.MAILBOX.#'   # rejected by broker
 ```
 
-Response:
+Subscriptions must be precise to a `mail_id`. Wildcarding across all mailboxes is not allowed.
+
+### Discover public mailboxes
+
+`$mq9.AI.PUBLIC.LIST` is broker-maintained. Subscribe once — all current public mailboxes are pushed immediately, then new ones arrive as they're created or expired.
+
+```bash
+nats sub '$mq9.AI.PUBLIC.LIST'
+```
+
+Each push:
 
 ```json
-{
-  "mail_id": "m-uuid-001",
-  "unread": 3,
-  "messages": [...]
-}
+{"event": "created", "mail_id": "task.queue", "desc": "main task queue", "ttl": 86400}
+{"event": "expired", "mail_id": "task.queue"}
 ```
 
-Normal flow: subscribe and get pushed. `QUERY` is your safety net after a gap.
-
-### Broadcast
-
-When you don't need to know who's listening — publish once, any subscriber receives it.
-
-```bash
-nats publish '$mq9.AI.BROADCAST.analytics.complete' '{
-  "from": "m-uuid-001",
-  "analysis_id": "a-789",
-  "result": "anomaly detected",
-  "confidence": 0.95
-}'
-```
-
-**Wildcard subscriptions:**
-
-```bash
-# All events in a domain
-nats subscribe '$mq9.AI.BROADCAST.analytics.*'
-
-# All alerts, any domain
-nats subscribe '$mq9.AI.BROADCAST.*.alert'
-
-# Everything
-nats subscribe '$mq9.AI.BROADCAST.#'
-```
+Use this to build a live index of what's running in the network. When an Agent's public mailbox TTL expires, it disappears from PUBLIC.LIST automatically.
 
 ### Compete for tasks
 
-Multiple Agents can handle the same task type. Use a queue group — only one Agent grabs each message.
+Create a public mailbox for task distribution. Multiple Agents subscribe with the same queue group — each task goes to exactly one Agent.
 
 ```bash
-nats subscribe '$mq9.AI.BROADCAST.task.available' --queue 'workers'
+# Create a shared task queue
+nats pub '$mq9.AI.MAILBOX.CREATE' '{"ttl": 86400, "public": true, "name": "task.queue"}'
+
+# Workers subscribe with queue group
+nats sub '$mq9.AI.MAILBOX.task.queue.*' --queue workers
 ```
 
 Ten tasks published → ten workers each grab one. No coordination. No duplicates.
 
-**What if a worker crashes mid-task?** mq9 delivers each message once to the queue group — it does not re-deliver if the consumer crashes. If your task requires at-least-once processing, have the worker publish an acknowledgement on completion, and have the dispatcher re-publish unacknowledged tasks after a timeout.
+**At-least-once processing:** mq9 delivers each message once to the queue group. If your task requires at-least-once guarantees, have the worker publish an acknowledgement on completion, and have the dispatcher re-publish unacknowledged tasks after a timeout.
 
 ### Advertise your capabilities
 
-On startup, tell the network what you can do:
+Create a public mailbox on startup to announce what you can do:
 
 ```bash
-nats publish '$mq9.AI.BROADCAST.system.capability' '{
-  "from": "m-uuid-001",
-  "capabilities": ["data.analysis", "anomaly.detection"],
-  "reply_to": "$mq9.AI.INBOX.m-uuid-001.normal"
+nats pub '$mq9.AI.MAILBOX.CREATE' '{
+  "ttl": 3600,
+  "public": true,
+  "name": "agent.analysis.v1",
+  "desc": "data analysis and anomaly detection"
 }'
 ```
 
-Any Orchestrator subscribed to `$mq9.AI.BROADCAST.system.capability` receives this and can build a live index:
+Any Orchestrator subscribed to `$mq9.AI.PUBLIC.LIST` receives this registration automatically. When your mailbox TTL expires, you're automatically removed. No extra messages needed.
+
+Orchestrators route tasks by publishing to your public `mail_id`:
 
 ```bash
-# Orchestrator subscribes and collects capability announcements
-nats subscribe '$mq9.AI.BROADCAST.system.capability'
-# Each message includes "from" (the agent's mail_id) and "capabilities"
-# Build your own index: capability → [mail_id, mail_id, ...]
-# Route tasks by publishing to $mq9.AI.INBOX.{mail_id}.normal
+nats pub '$mq9.AI.MAILBOX.agent.analysis.v1.normal' '{"type":"task","payload":"..."}'
 ```
-
-There is no central registry — the Orchestrator maintains its own index from live announcements. When an Agent's mailbox TTL expires, it stops announcing. The Orchestrator can treat silence as offline.
 
 ## Protocol summary
 
 ```text
-$mq9.AI.MAILBOX.CREATE                  → get a mailbox
-$mq9.AI.MAILBOX.QUERY.{mail_id}         → pull unread messages (requires token)
-$mq9.AI.INBOX.{mail_id}.urgent          → send, high priority (no token needed)
-$mq9.AI.INBOX.{mail_id}.normal          → send, normal
-$mq9.AI.INBOX.{mail_id}.notify          → send, background
-$mq9.AI.BROADCAST.{domain}.{event}      → broadcast to subscribers
+$mq9.AI.MAILBOX.CREATE                    → create a mailbox (private or public)
+$mq9.AI.MAILBOX.{mail_id}.high            → send, high priority
+$mq9.AI.MAILBOX.{mail_id}.normal          → send, normal
+$mq9.AI.MAILBOX.{mail_id}.low             → send, background
+$mq9.AI.MAILBOX.{mail_id}.*              → subscribe — all unexpired messages + realtime
+$mq9.AI.PUBLIC.LIST                       → discover all public mailboxes
 ```
 
 Any NATS client speaks this. No additional library needed.

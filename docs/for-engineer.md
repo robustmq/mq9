@@ -30,8 +30,8 @@ What it handles so you don't have to:
 
 - **Offline delivery** — message arrives when the target is offline? Stored. Delivered on reconnect. No retry logic needed.
 - **Point-to-point** — each Agent gets a mailbox. Send to a `mail_id`. Done.
-- **Broadcast** — publish once to a subject. All subscribers receive. No subscriber list management.
-- **Priority** — urgent messages processed first.
+- **Public channels** — create a named public mailbox. Any Agent can discover it via PUBLIC.LIST and subscribe.
+- **Priority** — high-priority messages processed first.
 - **Automatic cleanup** — mailboxes expire via TTL. No manual deletion, no orphaned state.
 - **Competing workers** — queue groups give you one-message-per-worker without coordination overhead.
 
@@ -49,40 +49,48 @@ async def main():
 
     # Agent A creates a mailbox
     resp = await nc.request("$mq9.AI.MAILBOX.CREATE",
-        json.dumps({"type": "standard", "ttl": 3600}).encode())
+        json.dumps({"ttl": 3600}).encode())
     agent_a = json.loads(resp.data)
     print(f"Agent A mailbox: {agent_a['mail_id']}")
 
     # Agent B creates a mailbox
     resp = await nc.request("$mq9.AI.MAILBOX.CREATE",
-        json.dumps({"type": "standard", "ttl": 3600}).encode())
+        json.dumps({"ttl": 3600}).encode())
     agent_b = json.loads(resp.data)
     print(f"Agent B mailbox: {agent_b['mail_id']}")
 
     received = asyncio.Event()
 
-    # Agent B subscribes to its inbox
+    # Agent B subscribes to its mailbox
     async def on_message(msg):
         data = json.loads(msg.data)
         print(f"Agent B received: {data['payload']}")
         # Reply to Agent A
         if data.get("reply_to"):
-            await nc.publish(data["reply_to"],
-                json.dumps({"from": agent_b["mail_id"],
-                            "type": "result",
-                            "correlation_id": data["correlation_id"],
-                            "payload": "task complete"}).encode())
+            await nc.publish(
+                f"$mq9.AI.MAILBOX.{data['reply_to']}.normal",
+                json.dumps({
+                    "msg_id": "reply-001",
+                    "from": agent_b["mail_id"],
+                    "type": "result",
+                    "correlation_id": data["correlation_id"],
+                    "payload": "task complete"
+                }).encode())
         received.set()
 
-    await nc.subscribe(f"$mq9.AI.INBOX.{agent_b['mail_id']}.*", cb=on_message)
+    await nc.subscribe(f"$mq9.AI.MAILBOX.{agent_b['mail_id']}.*", cb=on_message)
 
     # Agent A sends a task to Agent B
-    await nc.publish(f"$mq9.AI.INBOX.{agent_b['mail_id']}.normal",
-        json.dumps({"from": agent_a["mail_id"],
-                    "type": "task",
-                    "correlation_id": "demo-001",
-                    "reply_to": f"$mq9.AI.INBOX.{agent_a['mail_id']}.normal",
-                    "payload": "analyze this"}).encode())
+    await nc.publish(
+        f"$mq9.AI.MAILBOX.{agent_b['mail_id']}.normal",
+        json.dumps({
+            "msg_id": "task-001",
+            "from": agent_a["mail_id"],
+            "type": "task",
+            "correlation_id": "demo-001",
+            "reply_to": agent_a["mail_id"],
+            "payload": "analyze this"
+        }).encode())
     print("Agent A sent task")
 
     await received.wait()
@@ -105,28 +113,26 @@ python demo.py
 ```python
 # Python
 import asyncio, json
-from nats.aio.client import Client
+import nats
 
 async def main():
-    nc = await Client().connect("nats://localhost:4222")
+    nc = await nats.connect("nats://localhost:4222")
     resp = await nc.request(
         "$mq9.AI.MAILBOX.CREATE",
-        json.dumps({"type": "standard", "ttl": 3600}).encode()
+        json.dumps({"ttl": 3600}).encode()
     )
     mailbox = json.loads(resp.data)
     mail_id = mailbox["mail_id"]
-    token   = mailbox["token"]
 ```
 
 ```go
 // Go
 nc, _ := nats.Connect(nats.DefaultURL)
 resp, _ := nc.Request("$mq9.AI.MAILBOX.CREATE",
-    []byte(`{"type":"standard","ttl":3600}`), 2*time.Second)
+    []byte(`{"ttl":3600}`), 2*time.Second)
 
 var m struct {
     MailID string `json:"mail_id"`
-    Token  string `json:"token"`
 }
 json.Unmarshal(resp.Data, &m)
 ```
@@ -137,21 +143,22 @@ const nc = await connect({ servers: "nats://localhost:4222" });
 const jc = JSONCodec();
 const resp = await nc.request(
   "$mq9.AI.MAILBOX.CREATE",
-  jc.encode({ type: "standard", ttl: 3600 })
+  jc.encode({ ttl: 3600 })
 );
-const { mail_id, token } = jc.decode(resp.data);
+const { mail_id } = jc.decode(resp.data);
 ```
 
 ### Send a message
 
 ```python
 await nc.publish(
-    f"$mq9.AI.INBOX.{target_mail_id}.normal",
+    f"$mq9.AI.MAILBOX.{target_mail_id}.normal",
     json.dumps({
+        "msg_id": "msg-001",
         "from": mail_id,
         "type": "task",
         "correlation_id": "req-001",
-        "reply_to": f"$mq9.AI.INBOX.{mail_id}.normal",
+        "reply_to": mail_id,
         "payload": { "data": "..." }
     }).encode()
 )
@@ -159,43 +166,43 @@ await nc.publish(
 
 ### Subscribe and receive
 
+Subscribe delivers all unexpired messages immediately, then streams new arrivals. No separate pull needed.
+
 ```python
 async def on_message(msg):
     data = json.loads(msg.data)
+    # Deduplicate using msg_id if needed
+    if data["msg_id"] in seen:
+        return
+    seen.add(data["msg_id"])
+
     print(f"From {data['from']}: {data['payload']}")
 
     if data.get("reply_to"):
-        await nc.publish(data["reply_to"], json.dumps({
-            "from": mail_id,
-            "type": "result",
-            "correlation_id": data["correlation_id"],
-            "payload": { "status": "done" }
-        }).encode())
+        await nc.publish(
+            f"$mq9.AI.MAILBOX.{data['reply_to']}.normal",
+            json.dumps({
+                "msg_id": new_uuid(),
+                "from": mail_id,
+                "type": "result",
+                "correlation_id": data["correlation_id"],
+                "payload": { "status": "done" }
+            }).encode())
 
-await nc.subscribe(f"$mq9.AI.INBOX.{mail_id}.*", cb=on_message)
+await nc.subscribe(f"$mq9.AI.MAILBOX.{mail_id}.*", cb=on_message)
 ```
 
-### Broadcast
+### Discover public mailboxes
 
 ```python
-await nc.publish(
-    "$mq9.AI.BROADCAST.pipeline.complete",
-    json.dumps({ "from": mail_id, "stage": "preprocessing", "ok": True }).encode()
-)
+async def on_list(msg):
+    event = json.loads(msg.data)
+    if event["event"] == "created":
+        registry[event["mail_id"]] = event["desc"]
+    elif event["event"] == "expired":
+        registry.pop(event["mail_id"], None)
 
-# Other agents subscribe:
-await nc.subscribe("$mq9.AI.BROADCAST.pipeline.*", cb=handler)
-```
-
-### Query for missed messages
-
-```python
-resp = await nc.request(
-    f"$mq9.AI.MAILBOX.QUERY.{mail_id}",
-    json.dumps({"token": token}).encode()
-)
-result = json.loads(resp.data)
-print(f"Unread: {result['unread']}")
+await nc.subscribe("$mq9.AI.PUBLIC.LIST", cb=on_list)
 ```
 
 ## Common patterns
@@ -203,12 +210,13 @@ print(f"Unread: {result['unread']}")
 ### Child Agent reports result to parent {#pattern-child-result}
 
 ```python
-# Parent sends task
-await nc.publish(f"$mq9.AI.INBOX.{worker_id}.normal", json.dumps({
+# Parent sends task with reply_to
+await nc.publish(f"$mq9.AI.MAILBOX.{worker_id}.normal", json.dumps({
+    "msg_id": new_uuid(),
     "from": parent_id,
     "type": "work",
     "correlation_id": "job-001",
-    "reply_to": f"$mq9.AI.INBOX.{parent_id}.normal",
+    "reply_to": parent_id,
     "payload": { "data": [] }
 }).encode())
 
@@ -218,83 +226,69 @@ async def collect(msg):
     d = json.loads(msg.data)
     results[d["correlation_id"]] = d["payload"]
 
-await nc.subscribe(f"$mq9.AI.INBOX.{parent_id}.*", cb=collect)
-```
-
-### Orchestrator monitors all worker states {#pattern-orchestrator}
-
-```go
-// Worker: latest-type mailbox, state updates overwrite previous
-resp, _ := nc.Request("$mq9.AI.MAILBOX.CREATE",
-    []byte(`{"type":"latest","ttl":7200}`), 2*time.Second)
-
-nc.Publish(fmt.Sprintf("$mq9.AI.INBOX.%s.normal", statusID),
-    []byte(`{"from":"worker-1","status":"processing","load":0.7}`))
-
-// Orchestrator: one subscription covers all workers
-nc.Subscribe("$mq9.AI.INBOX.m-status-*.normal", func(msg *nats.Msg) {
-    var s map[string]interface{}
-    json.Unmarshal(msg.Data, &s)
-    workers[s["from"].(string)] = s
-    // When a worker's TTL expires, its state stops arriving → treat as offline
-})
+await nc.subscribe(f"$mq9.AI.MAILBOX.{parent_id}.*", cb=collect)
 ```
 
 ### Task broadcast with competing workers {#pattern-competing}
 
-```javascript
-// Master broadcasts task
-await nc.publish("$mq9.AI.BROADCAST.task.available",
-  jc.encode({ from: masterId, task_id: "t-001", data: {} }));
+```python
+# Create a public task queue (once, idempotent)
+await nc.request("$mq9.AI.MAILBOX.CREATE",
+    json.dumps({"ttl": 86400, "public": True, "name": "task.queue"}).encode())
 
-// Workers subscribe with shared queue group — each task goes to exactly one worker
-const sub = nc.subscribe("$mq9.AI.BROADCAST.task.available",
-  { queue: "task-workers" });
+# Orchestrator publishes tasks
+await nc.publish("$mq9.AI.MAILBOX.task.queue.normal",
+    json.dumps({"msg_id": new_uuid(), "task_id": "t-001", "data": {}}).encode())
 
-for await (const msg of sub) {
-  const task = jc.decode(msg.data);
-  const result = await process(task);
-  await nc.publish(`$mq9.AI.INBOX.${masterId}.normal`,
-    jc.encode({ from: workerId, task_id: task.task_id, result }));
-}
+# Workers subscribe with shared queue group — each task goes to exactly one worker
+async def handle_task(msg):
+    task = json.loads(msg.data)
+    result = await process(task)
+    await nc.publish(f"$mq9.AI.MAILBOX.{master_id}.normal",
+        json.dumps({"from": worker_id, "task_id": task["task_id"], "result": result}).encode())
+
+await nc.subscribe("$mq9.AI.MAILBOX.task.queue.*",
+    queue="task-workers", cb=handle_task)
 ```
 
 ### Cloud to offline edge device {#pattern-edge}
 
 ```go
 // Cloud: send commands — edge may be offline for hours
-nc.Publish(fmt.Sprintf("$mq9.AI.INBOX.%s.urgent", edgeID),
-    []byte(`{"command":"emergency_stop","reason":"temperature_critical"}`))
+nc.Publish(fmt.Sprintf("$mq9.AI.MAILBOX.%s.high", edgeID),
+    []byte(`{"msg_id":"cmd-001","command":"emergency_stop","reason":"temperature_critical"}`))
 
-nc.Publish(fmt.Sprintf("$mq9.AI.INBOX.%s.normal", edgeID),
-    []byte(`{"command":"update_config","interval":30}`))
+nc.Publish(fmt.Sprintf("$mq9.AI.MAILBOX.%s.normal", edgeID),
+    []byte(`{"msg_id":"cmd-002","command":"update_config","interval":30}`))
 
-// Edge: on reconnect, subscribe (urgent first) then query fallback
-nc.Subscribe(fmt.Sprintf("$mq9.AI.INBOX.%s.urgent", edgeID), urgentHandler)
-nc.Subscribe(fmt.Sprintf("$mq9.AI.INBOX.%s.normal", edgeID), normalHandler)
-
-queryResp, _ := nc.Request(
-    fmt.Sprintf("$mq9.AI.MAILBOX.QUERY.%s", edgeID),
-    []byte(fmt.Sprintf(`{"token":"%s"}`, edgeToken)), 2*time.Second)
+// Edge: on reconnect, subscribe — high priority messages arrive first
+nc.Subscribe(fmt.Sprintf("$mq9.AI.MAILBOX.%s.*", edgeID), func(msg *nats.Msg) {
+    // Process — high arrives before normal regardless of subscription order
+    var cmd map[string]interface{}
+    json.Unmarshal(msg.Data, &cmd)
+    dispatch(cmd)
+})
 ```
 
 ### Human-in-the-loop approval {#pattern-human}
 
 ```javascript
-// Agent sends approval request
-await nc.publish(`$mq9.AI.INBOX.${humanMailID}.urgent`, jc.encode({
+// Agent sends approval request to human's mailbox
+await nc.publish(`$mq9.AI.MAILBOX.${humanMailID}.high`, jc.encode({
+  msg_id: newUUID(),
   from: agentMailID,
   type: "approval_request",
   correlation_id: "approval-001",
   content: "Call external fraud API — estimated cost $50",
-  reply_to: `$mq9.AI.INBOX.${agentMailID}.normal`
+  reply_to: agentMailID
 }));
 
-// Human's client — same protocol, no special tooling
-for await (const msg of nc.subscribe(`$mq9.AI.INBOX.${humanMailID}.*`)) {
+// Human's client — same protocol, standard NATS client
+for await (const msg of nc.subscribe(`$mq9.AI.MAILBOX.${humanMailID}.*`)) {
   const req = jc.decode(msg.data);
   const approved = await showApprovalUI(req);
-  await nc.publish(req.reply_to, jc.encode({
+  await nc.publish(`$mq9.AI.MAILBOX.${req.reply_to}.normal`, jc.encode({
+    msg_id: newUUID(),
     from: humanMailID,
     type: "approval_response",
     correlation_id: req.correlation_id,
@@ -306,28 +300,49 @@ for await (const msg of nc.subscribe(`$mq9.AI.INBOX.${humanMailID}.*`)) {
 ### Capability registration and discovery {#pattern-capability}
 
 ```go
-// Agent announces capabilities on startup
-nc.Publish("$mq9.AI.BROADCAST.system.capability",
+// Agent creates a public mailbox on startup to announce capabilities
+nc.Request("$mq9.AI.MAILBOX.CREATE",
     []byte(fmt.Sprintf(`{
-        "from": "%s",
-        "capabilities": ["data.analysis","ml.training"],
-        "reply_to": "$mq9.AI.INBOX.%s.normal"
-    }`, agentID, agentID)))
+        "ttl": 3600,
+        "public": true,
+        "name": "agent.%s",
+        "desc": "data analysis, anomaly detection"
+    }`, agentID)), 2*time.Second)
 
-// Orchestrator builds live index from announcements
-index := map[string][]string{}
-nc.Subscribe("$mq9.AI.BROADCAST.system.capability", func(msg *nats.Msg) {
-    var reg map[string]interface{}
-    json.Unmarshal(msg.Data, &reg)
-    for _, cap := range reg["capabilities"].([]interface{}) {
-        index[cap.(string)] = append(index[cap.(string)], reg["from"].(string))
+// Orchestrator subscribes to PUBLIC.LIST — receives all registrations
+index := map[string]string{}
+nc.Subscribe("$mq9.AI.PUBLIC.LIST", func(msg *nats.Msg) {
+    var event map[string]string
+    json.Unmarshal(msg.Data, &event)
+    if event["event"] == "created" {
+        index[event["mail_id"]] = event["desc"]
+    } else if event["event"] == "expired" {
+        delete(index, event["mail_id"])
     }
 })
 
-// Dispatch to capable Agent
-for _, id := range index["ml.training"] {
-    nc.Publish(fmt.Sprintf("$mq9.AI.INBOX.%s.normal", id), task)
-}
+// Dispatch to a capable Agent by publishing to its public mail_id
+nc.Publish(fmt.Sprintf("$mq9.AI.MAILBOX.agent.%s.normal", targetID), task)
+```
+
+### Async request-reply {#pattern-request-reply}
+
+```python
+# Agent A asks Agent B a question — B may be offline
+correlation = new_uuid()
+
+await nc.publish(f"$mq9.AI.MAILBOX.{agent_b_id}.normal", json.dumps({
+    "msg_id": new_uuid(),
+    "from": agent_a_id,
+    "type": "question",
+    "correlation_id": correlation,
+    "reply_to": agent_a_id,
+    "payload": { "question": "..." }
+}).encode())
+
+# Agent A continues other work — no blocking
+# When Agent B comes online, it processes the question and replies to agent_a_id
+# Agent A's subscription handler picks up the reply by correlation_id
 ```
 
 ## Error handling
@@ -335,12 +350,11 @@ for _, id := range index["ml.training"] {
 | Situation | What happens | What to do |
 | - | - | - |
 | `MAILBOX.CREATE` fails | Returns error response | Retry with backoff; check server connectivity |
-| Send to expired `mail_id` | Message dropped silently | Validate `mail_id` is still active before sending critical messages |
-| `MAILBOX.QUERY` with wrong token | Returns auth error | Store token securely; recreate mailbox if token is lost |
-| TTL expires before Agent reconnects | Mailbox and all messages deleted | Set TTL longer than your worst-case offline window |
+| Send to expired `mail_id` | Message dropped silently | Set TTL longer than your worst-case offline window |
+| `MAILBOX.CREATE` called twice with same public name | Silently succeeds — TTL stays from first creation | This is intentional — CREATE is idempotent |
+| TTL expires before Agent reconnects | Mailbox and all messages deleted | Set TTL to cover worst-case offline duration |
 | Message exceeds size limit | Rejected with error | Keep payloads small; use references to external storage for large data |
-
-General rule: mq9 operations are best-effort at the application layer. For critical messages, use `INBOX.urgent` + `MAILBOX.QUERY` on reconnect as a two-layer safety net.
+| Duplicate message delivery | Possible on reconnect | Use `msg_id` for client-side deduplication |
 
 ## Deployment
 
@@ -387,13 +401,11 @@ nats sub '$mq9.AI.#'
 
 | Scenario | Subject | Pattern | Example |
 | - | - | - | - |
-| Point-to-point | `INBOX.{mail_id}.{priority}` | Send to known `mail_id` | [↑](#pattern-child-result) |
-| Status tracking | `INBOX.{status-id}.normal` | `latest`-type mailbox | [↑](#pattern-orchestrator) |
-| Competing workers | `BROADCAST.*` | Queue group subscription | [↑](#pattern-competing) |
-| Offline delivery | `INBOX.*` + `MAILBOX.QUERY` | Store-first, push-on-reconnect | [↑](#pattern-edge) |
-| Human-in-the-loop | `INBOX.{mail_id}.urgent` | Same protocol as Agent | [↑](#pattern-human) |
-| Capability discovery | `BROADCAST.system.capability` | Publisher-subscriber index | [↑](#pattern-capability) |
-| Broadcast to all | `BROADCAST.{domain}.{event}` | Wildcard subscribers | — |
-| Request-reply | `INBOX` + `reply_to` | `correlation_id` links the pair | — |
+| Point-to-point | `MAILBOX.{mail_id}.{priority}` | Send to known `mail_id` | [↑](#pattern-child-result) |
+| Competing workers | `MAILBOX.task.queue.*` | Public mailbox + queue group | [↑](#pattern-competing) |
+| Offline delivery | `MAILBOX.{mail_id}.*` | Store-first, push on subscribe | [↑](#pattern-edge) |
+| Human-in-the-loop | `MAILBOX.{mail_id}.high` | Same protocol as Agent | [↑](#pattern-human) |
+| Capability discovery | `PUBLIC.LIST` | Public mailbox auto-registration | [↑](#pattern-capability) |
+| Request-reply | `MAILBOX` + `reply_to` | `correlation_id` links the pair | [↑](#pattern-request-reply) |
 
 *See [What](/what) for design rationale. See [For Agent](/for-agent) for the Agent perspective.*
