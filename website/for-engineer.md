@@ -1,313 +1,386 @@
 ---
 title: For Engineer — mq9 Integration Guide
-description: How to integrate mq9 into your stack. Code examples in Python, Go, and JavaScript.
+description: How to integrate mq9 into your stack. Quick start, SDK examples, deployment, and common patterns.
 ---
 
 # For Engineer
 
 You're building a multi-Agent system. This is your integration guide.
 
-> This page assumes you've read [What is mq9](/what). It focuses on integration code and production considerations — not concept explanations.
+> This page assumes you've read [What is mq9](/what). It focuses on integration code and production considerations.
 
-## The problem you're facing
+## Quick start — public demo server
 
-Agents are not services. Services are always online — you can HTTP them, pub/sub them, stream to them. Agents spin up for a task and disappear. They restart. They go offline mid-conversation.
-
-You've probably already hit one of these:
-
-- Agent B is offline when Agent A sends a result. Message lost. You add a retry loop.
-- You use Redis pub/sub, but offline Agents miss publishes. You add Redis Streams. Now you're managing consumer groups for ephemeral processes.
-- You poll a shared database for coordination. It works, but it's slow and everyone's doing it differently.
-- You scale from 10 to 100 Agents and everything breaks — too many connections, too much state, no standard pattern.
-
-There's no standard solution for Agent-to-Agent async communication. Every team builds their own. None of it is simple. All of it breaks at scale.
-
-## What mq9 solves
-
-mq9 is async messaging infrastructure built specifically for Agents. You run one binary. Your Agents use the mq9 SDK — Python, Go, or JavaScript.
-
-What it handles so you don't have to:
-
-- **Offline delivery** — message arrives when the target is offline? Stored. Delivered on reconnect. No retry logic needed.
-- **Point-to-point** — each Agent gets a mailbox. Send to a `mail_id`. Done.
-- **Public channels** — create a named public mailbox. Any Agent can discover it via `mb.list()` and subscribe.
-- **Priority** — high-priority messages processed first.
-- **Automatic cleanup** — mailboxes expire via TTL. No manual deletion, no orphaned state.
-- **Competing workers** — resume groups give you one-message-per-worker without coordination overhead.
-
-## 30-second demo
-
-Two Agents, one message, end to end. Copy and run.
-
-```python
-# demo.py — requires: pip install mq9
-import asyncio
-from mq9 import Mailbox
-
-async def main():
-    mb = Mailbox("nats://localhost:4222")
-
-    # Agent A creates a mailbox
-    agent_a = await mb.create(ttl=3600)
-    print(f"Agent A mailbox: {agent_a['mail_id']}")
-
-    # Agent B creates a mailbox
-    agent_b = await mb.create(ttl=3600)
-    print(f"Agent B mailbox: {agent_b['mail_id']}")
-
-    received = asyncio.Event()
-
-    # Agent B subscribes to its mailbox
-    async def on_message(msg):
-        print(f"Agent B received: {msg['payload']}")
-        if msg.get("reply_to"):
-            await mb.send(msg["reply_to"], {
-                "from": agent_b["mail_id"],
-                "type": "result",
-                "correlation_id": msg["correlation_id"],
-                "payload": "task complete"
-            })
-        received.set()
-
-    await mb.receive(agent_b["mail_id"], callback=on_message)
-
-    # Agent A sends a task to Agent B
-    await mb.send(agent_b["mail_id"], {
-        "from": agent_a["mail_id"],
-        "type": "task",
-        "correlation_id": "demo-001",
-        "reply_to": agent_a["mail_id"],
-        "payload": "analyze this"
-    })
-    print("Agent A sent task")
-
-    await received.wait()
-
-asyncio.run(main())
-```
-
-Run mq9 first:
+No local setup needed. Connect to the RobustMQ demo server:
 
 ```bash
-docker run -d --name mq9 -p 4222:4222 mq9/mq9:latest
-python demo.py
+export NATS_URL=nats://demo.robustmq.com:4222
 ```
 
-## Core operations
+This is a shared environment — do not send sensitive data.
 
 ### Create a mailbox
 
+```bash
+nats request '$mq9.AI.MAILBOX.CREATE' '{"name":"quickstart.demo","ttl":300}'
+# {"error":"","mail_address":"quickstart.demo"}
+```
+
+### Send messages with priority
+
+```bash
+# Critical — processed first
+nats request '$mq9.AI.MSG.SEND.quickstart.demo' \
+  --header 'mq9-priority:critical' \
+  '{"type":"abort","task_id":"t-001"}'
+
+# Normal (default, no header)
+nats request '$mq9.AI.MSG.SEND.quickstart.demo' \
+  '{"type":"task","payload":"process dataset A"}'
+```
+
+### Fetch and ACK
+
+```bash
+# Fetch — returns messages in priority order (critical → urgent → normal)
+nats request '$mq9.AI.MSG.FETCH.quickstart.demo' '{
+  "group_name": "my-worker",
+  "deliver": "earliest",
+  "config": {"num_msgs": 10}
+}'
+
+# ACK — advance offset to last processed msg_id
+nats request '$mq9.AI.MSG.ACK.quickstart.demo' '{
+  "group_name": "my-worker",
+  "mail_address": "quickstart.demo",
+  "msg_id": 3
+}'
+```
+
+---
+
+## Install an SDK
+
+mq9 provides official SDKs that wrap the NATS protocol calls with typed APIs:
+
+```bash
+pip install mq9           # Python
+npm install mq9           # JavaScript / TypeScript
+go get github.com/robustmq/mq9/go   # Go
+cargo add mq9             # Rust
+```
+
+```xml
+<!-- Java (Maven) -->
+<dependency>
+  <groupId>io.mq9</groupId>
+  <artifactId>mq9</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+---
+
+## Core operations (SDK examples)
+
+### Create a mailbox with the SDK
+
 ```python
 # Python
-from mq9 import Mailbox
-
-mb = Mailbox("nats://localhost:4222")
-mail_id = await mb.create(ttl=3600)
+from mq9 import Mq9Client
+client = await Mq9Client.connect("nats://localhost:4222")
+address = await client.mailbox_create(name="agent.inbox", ttl=3600)
 ```
 
 ```go
 // Go
-mb := mq9.NewMailbox("nats://localhost:4222")
-mailID, _ := mb.Create(mq9.WithTTL(3600))
+client, _ := mq9.Connect("nats://localhost:4222")
+address, _ := client.MailboxCreate(ctx, "agent.inbox", 3600)
 ```
 
-```javascript
-// JavaScript
-const mb = new Mailbox("nats://localhost:4222")
-const mailID = await mb.create({ ttl: 3600 })
+```typescript
+// TypeScript
+const client = new Mq9Client("nats://localhost:4222");
+await client.connect();
+const address = await client.mailboxCreate({ name: "agent.inbox", ttl: 3600 });
 ```
+
+- `name = ""` (Python: `None`, Go: `""`) — broker auto-generates the address.
+- `ttl = 0` — mailbox never expires.
 
 ### Send a message
 
 ```python
-await mb.send(target_mail_id, {
-    "from": mail_id,
-    "type": "task",
-    "correlation_id": "req-001",
-    "reply_to": mail_id,
-    "payload": { "data": "..." }
-}, priority="normal")
+# Python — with priority and options
+msg_id = await client.send(
+    "agent.inbox",
+    b'{"task":"analyze","data":"..."}',
+    priority=Priority.URGENT,
+    key="state",       # dedup — only latest with this key is kept
+    delay=60,          # deliver after 60 seconds
+    ttl=300,           # message expires in 300 s
+    tags=["billing"],
+)
 ```
 
-### Subscribe and receive
+```go
+// Go
+msgId, _ := client.Send(ctx, "agent.inbox", []byte(`{"task":"analyze"}`), mq9.SendOptions{
+    Priority: mq9.PriorityUrgent,
+    Key:      "state",
+    Delay:    60,
+})
+```
 
-Subscribe delivers all unexpired messages immediately, then streams new arrivals. No separate pull needed.
+### Fetch messages (pull + ACK)
 
 ```python
-def on_message(msg):
-    print(f"From {msg['from']}: {msg['payload']}")
-    if msg.get("reply_to"):
-        mb.send(msg["reply_to"], {
-            "from": mail_id,
-            "type": "result",
-            "correlation_id": msg["correlation_id"],
-            "payload": { "status": "done" }
-        })
-
-mb.receive(mail_id, callback=on_message)
+# Python — stateful consumption
+from mq9 import FetchOptions
+messages = await client.fetch("agent.inbox", group_name="workers", deliver="earliest")
+for msg in messages:
+    process(msg)
+    await client.ack("agent.inbox", "workers", msg.msg_id)
 ```
 
-### Broadcast via public mailbox
+```go
+// Go
+messages, _ := client.Fetch(ctx, "agent.inbox", mq9.FetchOptions{
+    GroupName: "workers",
+    Deliver:   "earliest",
+})
+for _, msg := range messages {
+    process(msg)
+    client.Ack(ctx, "agent.inbox", "workers", msg.MsgID)
+}
+```
+
+ACK the **last `msg_id` in the batch** — one call confirms the whole batch. The next FETCH resumes from there.
+
+**Stateless fetch** — omit `group_name`. Each call is independent; no offset is recorded. Use for one-off reads and inspection.
+
+### Continuous consumption loop
+
+Use `consume()` for an automatic poll-and-process loop:
 
 ```python
-# Create public mailbox
-await mb.create(ttl=3600, public=True, name="pipeline.complete")
-
-# Send to it
-await mb.send("pipeline.complete", { "from": mail_id, "stage": "preprocessing", "ok": True })
-
-# Subscribe
-await mb.receive("pipeline.complete", callback=handler)
+# Python
+consumer = await client.consume(
+    "agent.inbox",
+    handler=async_handler,
+    group_name="workers",
+    auto_ack=True,
+    error_handler=lambda msg, err: print(f"msg {msg.msg_id} failed: {err}"),
+)
+# ... do other work ...
+await consumer.stop()
+print(f"processed: {consumer.processed_count}")
 ```
+
+```typescript
+// TypeScript
+const consumer = await client.consume("task.inbox", async (msg) => {
+  const data = JSON.parse(new TextDecoder().decode(msg.payload));
+  console.log(data);
+}, {
+  groupName: "workers",
+  autoAck: true,
+  errorHandler: async (msg, err) => console.error(`msg ${msg.msgId} failed:`, err),
+});
+await consumer.stop();
+```
+
+- Handler throws / returns error → message **not ACKed**, `errorHandler` called, loop continues.
+- `consumer.stop()` drains the current batch and exits cleanly.
+
+### Agent registry
+
+```python
+# Register at startup
+await client.agent_register({
+    "name": "agent.translator",
+    "mailbox": "agent.translator",
+    "payload": "Multilingual translation; EN/ZH/JA/KO",
+})
+
+# Discover by semantic intent
+agents = await client.agent_discover(semantic="translate Chinese to English", limit=5)
+
+# Report heartbeat
+await client.agent_report({"name": "agent.translator", "report_info": "running"})
+
+# Unregister at shutdown
+await client.agent_unregister("agent.translator")
+```
+
+---
 
 ## Common patterns
 
-### Child Agent reports result to parent {#pattern-child-result}
+### Sub-Agent result delivery
+
+Parent creates a private reply mailbox and shares it with the sub-agent at spawn time. Sub-agent deposits result. Parent FETCHes asynchronously — no polling, no shared state.
 
 ```python
-# Parent sends task with reply_to
-await mb.send(worker_id, {
-    "from": parent_id,
-    "type": "work",
-    "correlation_id": "job-001",
-    "reply_to": parent_id,
-    "payload": { "data": [] }
-})
+# Parent: create private reply mailbox
+reply_address = await client.mailbox_create(ttl=3600)
 
-# Parent collects results — non-blocking
-results = {}
-async def collect(msg):
-    results[msg["correlation_id"]] = msg["payload"]
+# Parent: send task to sub-agent with reply_to
+await client.send("task.dispatch", json.dumps({
+    "task": "summarize /data/corpus",
+    "reply_to": reply_address,
+}).encode())
 
-await mb.receive(parent_id, callback=collect)
+# Parent: FETCH result whenever ready (non-blocking)
+messages = await client.fetch(reply_address, group_name="orchestrator", deliver="earliest")
 ```
 
-### Task broadcast with competing workers {#pattern-competing}
+### Multi-worker task queue
+
+Multiple workers share the same `group_name`. Each task is processed by exactly one worker — no coordination, no duplicate processing. Workers join or leave at any time without reconfiguration.
 
 ```python
-# Create a public task queue (once, idempotent)
-await mb.create(ttl=86400, public=True, name="task.queue")
-
-# Orchestrator publishes tasks
-await mb.send("task.queue", { "task_id": "t-001", "data": {} })
-
-# Workers subscribe with resume group — each task goes to exactly one worker
-async def handle_task(msg):
-    result = await process(msg)
-    await mb.send(master_id, { "from": worker_id, "task_id": msg["task_id"], "result": result })
-
-await mb.receive("task.queue", resume="task-workers", callback=handle_task)
-```
-
-### Cloud to offline edge device {#pattern-edge}
-
-```go
-// Cloud: send commands — edge may be offline for hours
-mb.Send(edgeID, map[string]any{
-    "command": "emergency_stop",
-    "reason":  "temperature_critical",
-}, mq9.WithPriority("high"))
-
-mb.Send(edgeID, map[string]any{
-    "command":  "update_config",
-    "interval": 30,
-})
-
-// Edge: on reconnect, subscribe — high priority messages arrive first
-mb.Receive(edgeID, func(msg mq9.Message) {
-    dispatch(msg)
-})
-```
-
-### Human-in-the-loop approval {#pattern-human}
-
-```javascript
-// Agent sends approval request to human's mailbox
-await mb.send(humanMailID, {
-  from: agentMailID,
-  type: "approval_request",
-  correlation_id: "approval-001",
-  content: "Call external fraud API — estimated cost $50",
-  reply_to: agentMailID
-}, { priority: "high" })
-
-// Human's client — same SDK
-mb.receive(humanMailID, async (req) => {
-  const approved = await showApprovalUI(req)
-  await mb.send(req.reply_to, {
-    from: humanMailID,
-    type: "approval_response",
-    correlation_id: req.correlation_id,
-    approved
-  })
-})
-```
-
-### Capability registration and discovery {#pattern-capability}
-
-```go
-// Agent creates a public mailbox on startup to announce capabilities
-mb.Create(
-    mq9.WithTTL(3600),
-    mq9.WithPublic(true),
-    mq9.WithName("agent."+agentID),
-    mq9.WithDesc("data analysis, anomaly detection"),
+# Producer: publish tasks with priority
+await client.send("task.queue",
+    b'{"task":"reindex","id":"t-101"}',
+    priority=Priority.CRITICAL,
 )
 
-// Orchestrator subscribes to PUBLIC.LIST — receives all registrations
-index := map[string]string{}
-mb.List(func(event mq9.ListEvent) {
-    if event.Type == "created" {
-        index[event.MailID] = event.Desc
-    } else if event.Type == "expired" {
-        delete(index, event.MailID)
-    }
-})
-
-// Dispatch to a capable Agent
-mb.Send("agent."+targetID, task)
+# Worker A and Worker B — same group_name
+messages = await client.fetch("task.queue", group_name="workers", num_msgs=1)
+for msg in messages:
+    await process(msg)
+    await client.ack("task.queue", "workers", msg.msg_id)
 ```
 
-### Async request-reply {#pattern-request-reply}
+### Cloud-to-edge command delivery
+
+Cloud publishes to the edge agent's private mailbox. Edge agent may be offline for hours. On reconnect, it FETCHes all pending commands in priority order — critical reconfiguration before routine tasks.
+
+```go
+// Cloud: publish commands (edge may be offline)
+client.Send(ctx, "edge.agent", []byte(`{"cmd":"reconfigure","params":{"rate":100}}`),
+    mq9.SendOptions{Priority: mq9.PriorityCritical})
+
+client.Send(ctx, "edge.agent", []byte(`{"cmd":"run_diagnostic"}`), mq9.SendOptions{})
+
+// Edge: on reconnect, fetch all pending in priority order
+messages, _ := client.Fetch(ctx, "edge.agent", mq9.FetchOptions{
+    GroupName: "edge-agent",
+    Deliver:   "earliest",
+    NumMsgs:   10,
+})
+```
+
+### Human-in-the-loop approval
+
+The human's client uses the exact same protocol as any Agent — no webhooks, no routing middleware.
+
+```typescript
+// Agent: send approval request to human's mailbox
+await client.send(humanMailAddress, JSON.stringify({
+  type: "approval_request",
+  action: "delete_dataset",
+  target: "ds-prod-2024",
+  reply_to: agentMailAddress,
+}), { priority: Priority.URGENT });
+
+// Human's client — same SDK
+const consumer = await client.consume(humanMailAddress, async (req) => {
+  const data = JSON.parse(new TextDecoder().decode(req.payload));
+  const approved = await showApprovalUI(data);
+  await client.send(data.reply_to, JSON.stringify({ approved, reviewer: "alice" }));
+});
+```
+
+### Async request-reply
+
+Agent A asks Agent B a question, then continues other work. Agent B processes at its own pace and replies to A's private reply mailbox.
+
+```bash
+# Agent A: create private reply mailbox
+nats request '$mq9.AI.MAILBOX.CREATE' '{"ttl":600}'
+# → {"mail_address":"reply.a1b2c3"}
+
+# Agent A: send request to Agent B with reply_to
+nats request '$mq9.AI.MSG.SEND.agent.b' '{
+  "request":"translate","text":"Hello world","lang":"fr","reply_to":"reply.a1b2c3"
+}'
+
+# Agent B: fetch its queue and reply
+nats request '$mq9.AI.MSG.FETCH.agent.b' '{"group_name":"b-worker","deliver":"earliest"}'
+nats request '$mq9.AI.MSG.SEND.reply.a1b2c3' '{"result":"Bonjour le monde"}'
+nats request '$mq9.AI.MSG.ACK.agent.b' '{"group_name":"b-worker","mail_address":"agent.b","msg_id":1}'
+
+# Agent A: FETCH reply whenever ready
+nats request '$mq9.AI.MSG.FETCH.reply.a1b2c3' '{"deliver":"earliest"}'
+```
+
+---
+
+## LangChain / LangGraph integration
+
+`langchain-mq9` wraps all mq9 operations as LangChain tools:
+
+```bash
+pip install langchain-mq9
+```
 
 ```python
-# Agent A asks Agent B a question — B may be offline
-await mb.send(agent_b_id, {
-    "from": agent_a_id,
-    "type": "question",
-    "correlation_id": "q-001",
-    "reply_to": agent_a_id,
-    "payload": { "question": "..." }
-})
+from langchain_mq9 import Mq9Toolkit
+from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain_openai import ChatOpenAI
 
-# Agent A continues other work — no blocking
-# When Agent B comes online, it processes the question and replies to agent_a_id
-# Agent A's receive callback picks up the reply by correlation_id
+toolkit = Mq9Toolkit(server="nats://localhost:4222")
+tools = toolkit.get_tools()
+
+llm = ChatOpenAI(model="gpt-4o")
+agent = create_tool_calling_agent(llm, tools, prompt)
+executor = AgentExecutor(agent=agent, tools=tools)
+result = executor.invoke({"input": "Create a mailbox and send me a task summary"})
 ```
+
+Available tools: `CreateMailboxTool`, `CreatePublicMailboxTool`, `SendMessageTool`, `GetMessagesTool`, `ListMessagesTool`, `DeleteMessageTool`.
+
+---
+
+## MCP server
+
+mq9 exposes a Model Context Protocol (MCP) server on the RobustMQ Admin Server. Connect any MCP-compatible client (Claude Desktop, Cursor, etc.):
+
+```text
+http://<admin-server>:<port>/mcp
+```
+
+---
 
 ## Error handling
 
-| Situation | What happens | What to do |
-| - | - | - |
-| `mb.create()` fails | Returns error | Retry with backoff; check server connectivity |
-| Send to expired `mail_id` | Message dropped silently | Set TTL longer than your worst-case offline window |
-| `mb.create()` called twice with same public name | Silently succeeds — TTL stays from first creation | This is intentional — CREATE is idempotent |
-| TTL expires before Agent reconnects | Mailbox and all messages deleted | Set TTL to cover worst-case offline duration |
-| Message exceeds size limit | Rejected with error | Keep payloads small; use references to external storage for large data |
+All protocol responses include an `error` field. An empty string means success.
+
+| Error message                | Cause                                                 |
+| ---------------------------- | ----------------------------------------------------- |
+| `mailbox xxx already exists` | CREATE called with a name that already exists         |
+| `mailbox not found`          | Mailbox does not exist or has expired                 |
+| `message not found`          | The specified `msg_id` does not exist or has expired  |
+| `invalid mail_address`       | Format is invalid (uppercase, hyphens, etc.)          |
+| `agent not found`            | UNREGISTER or REPORT called with unknown Agent name   |
+
+SDK exceptions: all SDKs throw/return `Mq9Error` for non-empty `error` responses.
+
+---
 
 ## Deployment
 
-### Development
+### Development (Docker)
 
 ```bash
-docker run -d --name mq9 -p 4222:4222 -v mq9-data:/data mq9/mq9:latest
+docker run -d --name mq9 -p 4222:4222 -v mq9-data:/data robustmq/robustmq:latest
 ```
 
-Mount `-v mq9-data:/data` to persist mailboxes and messages across container restarts. Without it, all data is lost on restart.
+Mount `-v mq9-data:/data` to persist mailboxes and messages across restarts.
 
 ### Production — single node
-
-Single binary, no external dependencies. A single node handles millions of concurrent Agent connections. Suitable for most production workloads.
 
 ```bash
 docker run -d \
@@ -316,37 +389,31 @@ docker run -d \
   -p 9090:9090 \
   -v /data/mq9:/data \
   --restart unless-stopped \
-  mq9/mq9:latest
+  robustmq/robustmq:latest
 ```
 
-- Port `4222` — mq9 protocol (Agent connections)
+- Port `4222` — mq9/NATS protocol (Agent connections)
 - Port `9090` — Prometheus metrics endpoint
+
+A single node handles millions of concurrent Agent connections and is sufficient for most production workloads.
 
 ### Cluster mode
 
 Scale horizontally when a single node is not enough. Agents use the same SDK — no client code changes required.
 
-### Observability
-
-```bash
-# Prometheus metrics
-curl http://localhost:9090/metrics
-```
-
-```python
-# Fetch all messages in a mailbox
-await mb.fetch(mail_id)
-```
+---
 
 ## Pattern reference
 
-| Scenario | API | Pattern |
-| - | - | - |
-| Point-to-point | `mb.send(mail_id, payload)` | Send to known mail_id |
-| Public broadcast | `mb.send(name, payload)` | Public mailbox + `mb.receive` |
-| Competing workers | `mb.receive(name, resume="workers")` | Resume group — one message per worker |
-| Request-reply | `mb.send` + `reply_to` field | `correlation_id` links the pair |
-| Capability discovery | `mb.create(public=True, name="...")` | PUBLIC.LIST auto-registration |
-| Offline delivery | `mb.send` + `mb.receive` | Store-first, push on reconnect |
+| Scenario               | Key feature                             |
+| ---------------------- | --------------------------------------- |
+| Point-to-point         | Private mailbox + FETCH + ACK           |
+| Competing workers      | Shared `group_name` across workers      |
+| Broadcast              | Named public mailbox, multiple fetchers |
+| Request-reply          | Private reply mailbox + `reply_to`      |
+| Offline delivery       | Store-first, FETCH on reconnect         |
+| Capability discovery   | AGENT.REGISTER + AGENT.DISCOVER         |
+| Cloud-to-edge          | Priority ordering on reconnect          |
+| Human-in-the-loop      | Same protocol for humans and Agents     |
 
-*See [What](/what) for design rationale. See [For Agent](/for-agent) for the Agent perspective.*
+*See [What](/what) for design rationale. See [For Agent](/for-agent) for the Agent protocol perspective.*

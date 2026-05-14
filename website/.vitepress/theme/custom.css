@@ -146,6 +146,22 @@ div[class*='language-'] code {
   border-bottom: none;
 }
 
+/* ─── Nav dropdown ────────────────────────────────────────────── */
+.VPFlyout .menu,
+.VPFlyout .panel,
+.VPNavBarMenuGroup .panel,
+.VPNavBarMenuGroup .menu {
+  background: #ffffff !important;
+  border: 1px solid var(--vp-c-divider) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ─── Sidebar ─────────────────────────────────────────────────── */
+.VPSidebar {
+  background: #ffffff !important;
+  border-right: 1px solid var(--vp-c-divider) !important;
+}
+
 /* ─── Footer ──────────────────────────────────────────────────── */
 .VPFooter {
   border-top: 1px solid var(--vp-c-divider) !important;
