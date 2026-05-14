@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "langchain-mq9"
+version = "0.1.0"
+description = "LangChain / LangGraph tools for the mq9 AI-native async Agent mailbox protocol"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-core>=0.2",
+    "mq9>=0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "langchain-openai",
+]
+
+[project.urls]
+Homepage = "https://mq9.robustmq.com"
+Repository = "https://github.com/robustmq/mq9"
+
+[tool.hatch.build.targets.wheel]
+packages = ["langchain_mq9"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

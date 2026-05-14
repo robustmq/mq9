@@ -320,11 +320,26 @@ nats request '$mq9.AI.MSG.FETCH.reply.a1b2c3' '{"deliver":"earliest"}'
 
 ## LangChain / LangGraph integration
 
-`langchain-mq9` wraps all mq9 operations as LangChain tools:
+`langchain-mq9` is an official toolkit that wraps all mq9 operations as LangChain tools. Works with both LangChain and LangGraph out of the box.
 
 ```bash
 pip install langchain-mq9
 ```
+
+**8 tools included:**
+
+| Tool | Operation |
+| ---- | --------- |
+| `create_mailbox` | Create a private mailbox |
+| `send_message` | Send a message with priority |
+| `fetch_messages` | Pull messages (FETCH + ACK model) |
+| `ack_messages` | Advance consumer group offset |
+| `query_messages` | Inspect mailbox read-only |
+| `delete_message` | Delete a specific message |
+| `agent_register` | Register this agent with capabilities |
+| `agent_discover` | Find agents by text or semantic search |
+
+**LangChain:**
 
 ```python
 from langchain_mq9 import Mq9Toolkit
@@ -340,7 +355,26 @@ executor = AgentExecutor(agent=agent, tools=tools)
 result = executor.invoke({"input": "Create a mailbox and send me a task summary"})
 ```
 
-Available tools: `CreateMailboxTool`, `CreatePublicMailboxTool`, `SendMessageTool`, `GetMessagesTool`, `ListMessagesTool`, `DeleteMessageTool`.
+**LangGraph:**
+
+```python
+from langgraph.prebuilt import create_react_agent
+from langchain_mq9 import Mq9Toolkit
+
+toolkit = Mq9Toolkit(server="nats://localhost:4222")
+app = create_react_agent(llm, toolkit.get_tools())
+result = await app.ainvoke({"messages": [("human", "Discover all registered agents")]})
+```
+
+**Manual tool usage (no LLM):**
+
+```python
+tools_by_name = {t.name: t for t in toolkit.get_tools()}
+
+address = await tools_by_name["create_mailbox"]._arun(ttl=300)
+await tools_by_name["send_message"]._arun(mail_address=address, content="hello")
+result = await tools_by_name["fetch_messages"]._arun(mail_address=address, group_name="workers")
+```
 
 ---
 

@@ -68,7 +68,7 @@ This repo contains official SDKs for all major languages:
 | JavaScript | `npm install mq9`                   | `javascript/` |
 | Go         | `go get github.com/robustmq/mq9/go` | `go/`         |
 | Rust       | `cargo add mq9`                     | `rust/`       |
-| Java       | `io.mq9:mq9:0.1.0`                 | `java/`       |
+| Java       | `io.mq9:mq9:0.1.0`                  | `java/`       |
 
 ### Python
 
@@ -205,6 +205,38 @@ mq9/
   website/      — Documentation site (mq9.robustmq.com)
   VERSION       — Single source of truth for all SDK versions
 ```
+
+---
+
+## LangChain / LangGraph
+
+`langchain-mq9` wraps all mq9 operations as LangChain tools — works with LangChain and LangGraph out of the box:
+
+```bash
+pip install langchain-mq9
+```
+
+```python
+from langchain_mq9 import Mq9Toolkit
+from langgraph.prebuilt import create_react_agent
+
+toolkit = Mq9Toolkit(server="nats://localhost:4222")
+app = create_react_agent(llm, toolkit.get_tools())
+```
+
+8 tools: `create_mailbox`, `send_message`, `fetch_messages`, `ack_messages`, `query_messages`, `delete_message`, `agent_register`, `agent_discover`.
+
+---
+
+## Demo
+
+Ready-to-run demos for all languages in [`demo/`](./demo/):
+
+| Demo | Description |
+| ---- | ----------- |
+| `message_demo` | Mailbox, send/fetch/ack, priority, key dedup, tags, delay, query, delete |
+| `agent_demo` | Register, heartbeat, full-text search, semantic search, send to discovered agent |
+| `langchain_demo` | LangChain + LangGraph tool usage (Python only) |
 
 ---
 
