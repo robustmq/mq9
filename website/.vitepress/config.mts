@@ -51,12 +51,36 @@ export default defineConfig({
       { text: 'For Agent', link: '/for-agent' },
       { text: 'For Engineer', link: '/for-engineer' },
       {
+        text: 'SDK',
+        items: [
+          { text: 'Python', link: '/sdk/python' },
+          { text: 'JavaScript', link: '/sdk/javascript' },
+          { text: 'Go', link: '/sdk/go' },
+          { text: 'Rust', link: '/sdk/rust' },
+          { text: 'Java', link: '/sdk/java' },
+        ],
+      },
+      {
         text: 'GitHub',
         link: 'https://github.com/robustmq/robustmq',
       },
     ],
 
-    sidebar: false,
+    sidebar: {
+      '/sdk/': [
+        {
+          text: 'SDK',
+          items: [
+            { text: 'Python', link: '/sdk/python' },
+            { text: 'JavaScript', link: '/sdk/javascript' },
+            { text: 'Go', link: '/sdk/go' },
+            { text: 'Rust', link: '/sdk/rust' },
+            { text: 'Java', link: '/sdk/java' },
+          ],
+        },
+      ],
+    },
+
     aside: false,
 
 
