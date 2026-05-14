@@ -1,9 +1,0 @@
-(function() {
-    var implementors = Object.fromEntries([["mq9",[["impl UnsafeUnpin for <a class=\"enum\" href=\"mq9/enum.Mq9Error.html\" title=\"enum mq9::Mq9Error\">Mq9Error</a>",1,["mq9::error::Mq9Error"]],["impl UnsafeUnpin for <a class=\"enum\" href=\"mq9/enum.Priority.html\" title=\"enum mq9::Priority\">Priority</a>",1,["mq9::types::Priority"]],["impl UnsafeUnpin for <a class=\"struct\" href=\"mq9/struct.ClientOptions.html\" title=\"struct mq9::ClientOptions\">ClientOptions</a>",1,["mq9::client::ClientOptions"]],["impl UnsafeUnpin for <a class=\"struct\" href=\"mq9/struct.ConsumeOptions.html\" title=\"struct mq9::ConsumeOptions\">ConsumeOptions</a>",1,["mq9::types::ConsumeOptions"]],["impl UnsafeUnpin for <a class=\"struct\" href=\"mq9/struct.Consumer.html\" title=\"struct mq9::Consumer\">Consumer</a>",1,["mq9::types::Consumer"]],["impl UnsafeUnpin for <a class=\"struct\" href=\"mq9/struct.FetchOptions.html\" title=\"struct mq9::FetchOptions\">FetchOptions</a>",1,["mq9::types::FetchOptions"]],["impl UnsafeUnpin for <a class=\"struct\" href=\"mq9/struct.Message.html\" title=\"struct mq9::Message\">Message</a>",1,["mq9::types::Message"]],["impl UnsafeUnpin for <a class=\"struct\" href=\"mq9/struct.Mq9Client.html\" title=\"struct mq9::Mq9Client\">Mq9Client</a>",1,["mq9::client::Mq9Client"]],["impl UnsafeUnpin for <a class=\"struct\" href=\"mq9/struct.SendOptions.html\" title=\"struct mq9::SendOptions\">SendOptions</a>",1,["mq9::types::SendOptions"]]]]]);
-    if (window.register_implementors) {
-        window.register_implementors(implementors);
-    } else {
-        window.pending_implementors = implementors;
-    }
-})()
-//{"start":57,"fragment_lengths":[1421]}

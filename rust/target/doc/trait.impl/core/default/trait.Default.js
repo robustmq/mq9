@@ -1,9 +1,0 @@
-(function() {
-    var implementors = Object.fromEntries([["mq9",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"enum\" href=\"mq9/enum.Priority.html\" title=\"enum mq9::Priority\">Priority</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"mq9/struct.ClientOptions.html\" title=\"struct mq9::ClientOptions\">ClientOptions</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"mq9/struct.ConsumeOptions.html\" title=\"struct mq9::ConsumeOptions\">ConsumeOptions</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"mq9/struct.FetchOptions.html\" title=\"struct mq9::FetchOptions\">FetchOptions</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"mq9/struct.SendOptions.html\" title=\"struct mq9::SendOptions\">SendOptions</a>"]]]]);
-    if (window.register_implementors) {
-        window.register_implementors(implementors);
-    } else {
-        window.pending_implementors = implementors;
-    }
-})()
-//{"start":57,"fragment_lengths":[1337]}

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Mq9Error","Priority"],"struct":["ClientOptions","ConsumeOptions","Consumer","FetchOptions","Message","Mq9Client","SendOptions"],"type":["Result"]};

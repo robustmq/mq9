@@ -1,9 +1,0 @@
-/Users/oker/robustmq-mq9/java/src/main/java/io/mq9/ClientOptions.java
-/Users/oker/robustmq-mq9/java/src/main/java/io/mq9/ConsumeOptions.java
-/Users/oker/robustmq-mq9/java/src/main/java/io/mq9/Consumer.java
-/Users/oker/robustmq-mq9/java/src/main/java/io/mq9/FetchOptions.java
-/Users/oker/robustmq-mq9/java/src/main/java/io/mq9/Message.java
-/Users/oker/robustmq-mq9/java/src/main/java/io/mq9/Mq9Client.java
-/Users/oker/robustmq-mq9/java/src/main/java/io/mq9/Mq9Error.java
-/Users/oker/robustmq-mq9/java/src/main/java/io/mq9/Priority.java
-/Users/oker/robustmq-mq9/java/src/main/java/io/mq9/SendOptions.java
