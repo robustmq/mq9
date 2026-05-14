@@ -1,0 +1,12 @@
+io/mq9/Mq9ClientTest$ConsumeTests.class
+io/mq9/Mq9ClientTest$MailboxCreateTests.class
+io/mq9/Mq9ClientTest$SendTests.class
+io/mq9/Mq9ClientTest$DeleteTests.class
+io/mq9/Mq9ClientTest$AgentReportTests.class
+io/mq9/Mq9ClientTest$AgentRegisterTests.class
+io/mq9/Mq9ClientTest.class
+io/mq9/Mq9ClientTest$FetchTests.class
+io/mq9/Mq9ClientTest$AgentDiscoverTests.class
+io/mq9/Mq9ClientTest$QueryTests.class
+io/mq9/Mq9ClientTest$AckTests.class
+io/mq9/Mq9ClientTest$AgentUnregisterTests.class

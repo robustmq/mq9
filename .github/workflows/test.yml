@@ -1,0 +1,77 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "website/**"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "website/**"
+
+jobs:
+  test-python:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        working-directory: python
+        run: pip install -e ".[dev]"
+      - name: Run tests
+        working-directory: python
+        run: pytest -q
+
+  test-javascript:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        working-directory: javascript
+        run: npm ci
+      - name: Run tests
+        working-directory: javascript
+        run: npm test
+
+  test-go:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+      - name: Run tests
+        working-directory: go
+        run: go test ./...
+
+  test-rust:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: Run tests
+        working-directory: rust
+        run: cargo test --all
+
+  test-java:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+          cache: maven
+      - name: Run tests
+        working-directory: java
+        run: mvn test -q

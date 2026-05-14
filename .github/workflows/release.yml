@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  # ── Step 1: validate version, create git tag + GitHub Release ──────────────
+  prepare:
+    if: >
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.title, 'release:')
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "Releasing ${VERSION}"
+
+      - name: Verify python/pyproject.toml matches VERSION
+        run: |
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          if ! grep -q "version = \"${VERSION}\"" python/pyproject.toml; then
+            echo "ERROR: python/pyproject.toml version does not match VERSION (${VERSION})"
+            exit 1
+          fi
+          echo "Verified: python/pyproject.toml == ${VERSION}"
+
+      - name: Create and push git tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "ERROR: tag ${TAG} already exists"
+            exit 1
+          fi
+          git tag "${TAG}" -m "Release ${TAG}"
+          git push origin "${TAG}"
+          echo "Pushed tag ${TAG}"
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          generateReleaseNotes: true
+          makeLatest: true
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+  # ── Step 2: publish Python SDK to PyPI ─────────────────────────────────────
+  release-python:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build
+        working-directory: python
+        run: python -m build
+
+      - name: Publish to PyPI
+        working-directory: python
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: twine upload dist/*
+
+  # ── Step 3: summary ─────────────────────────────────────────────────────────
+  summary:
+    needs: [prepare, release-python]
+    runs-on: ubuntu-22.04
+    if: always()
+    steps:
+      - name: Release summary
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          ## Release v${VERSION}
+
+          | SDK | Registry | Status |
+          |-----|----------|--------|
+          | Python | PyPI | ${{ needs.release-python.result }} |
+
+          GitHub Release: https://github.com/${{ github.repository }}/releases/tag/v${VERSION}
+          EOF

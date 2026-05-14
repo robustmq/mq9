@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mq9"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "nats-py>=2.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["mq9"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
