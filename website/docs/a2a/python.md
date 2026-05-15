@@ -44,23 +44,29 @@ agent = Mq9A2AAgent()  # defaults to public debug server
 
 @agent.on_message
 async def handle(context: RequestContext, event_queue: EventQueue) -> None:
+    # Resume an existing task (multi-turn), or create a new one from this message.
     task = context.current_task or new_task_from_user_message(context.message)
+    # First event must be the Task object — creates the task record on the sender's side.
     await event_queue.enqueue_event(task)
 
+    # Tell the sender processing has started.
     await event_queue.enqueue_event(TaskStatusUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
         status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
     ))
 
+    # Extract the first text part from the message.
     text = context.message.parts[0].text if context.message.parts else ""
     result = my_translate(text)  # your logic here
 
+    # Push the result; call multiple times to stream partial output.
     await event_queue.enqueue_event(TaskArtifactUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
         artifact=new_text_artifact(name="translation", text=result),
     ))
+    # Signal task is done — the sender's stream ends here.
     await event_queue.enqueue_event(TaskStatusUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
@@ -68,7 +74,7 @@ async def handle(context: RequestContext, event_queue: EventQueue) -> None:
     ))
 
 card = AgentCard(
-    name="agent-a",
+    name="demo.agent.translator",
     description="Multilingual translation agent. Supports EN, ZH, JA, KO.",
     version="1.0.0",
     skills=[AgentSkill(id="translate", name="Translate text")],
@@ -77,7 +83,8 @@ card = AgentCard(
 
 async def main():
     await agent.connect()
-    mailbox = await agent.register(card)
+    mailbox = await agent.create_mailbox(card.name)  # create mailbox, start receiving
+    await agent.register(card)                       # publish to registry, become discoverable
     print("mailbox:", mailbox)
     await asyncio.Event().wait()  # keep running until Ctrl+C
 
@@ -89,29 +96,53 @@ asyncio.run(main())
 ```python
 import asyncio
 from a2a.helpers import new_text_message
-from a2a.types.a2a_pb2 import Role, SendMessageRequest
+from a2a.types.a2a_pb2 import AgentCard, AgentCapabilities, Role, SendMessageRequest
+from a2a.server.agent_execution import RequestContext
+from a2a.server.events import EventQueue
 from mq9.a2a import Mq9A2AAgent
 
-async def main():
-    agent = Mq9A2AAgent()  # defaults to public debug server
-    await agent.connect()
+agent_b = Mq9A2AAgent()  # defaults to public debug server
 
-    results = await agent.discover("translation agent")
+# Register a handler to receive results sent back by Agent A.
+@agent_b.on_message
+async def on_result(context: RequestContext, _) -> None:
+    text = context.message.parts[0].text if context.message.parts else ""
+    print("Result:", text)
+
+card_b = AgentCard(
+    name="demo.agent.sender",
+    description="Demo sender agent",
+    version="1.0.0",
+    capabilities=AgentCapabilities(streaming=False),
+)
+
+async def main():
+    await agent_b.connect()
+    # Create own mailbox so Agent A has an address to write results back to.
+    b_mailbox = await agent_b.create_mailbox(card_b.name)
+    await agent_b.register(card_b)  # publish to registry (optional — B only needs to be reachable)
+
+    results = await agent_b.discover("translation agent")
     target = results[0]
 
     request = SendMessageRequest(
         message=new_text_message("你好，世界", role=Role.ROLE_USER)
     )
 
-    msg_id = await agent.send_message(target["mailbox"], request)
+    # Pass reply_to so Agent A streams results back to our mailbox.
+    msg_id = await agent_b.send_message(target["mailbox"], request, reply_to=b_mailbox)
     print("Sent, msg_id:", msg_id)
 
-    await agent.close()
+    # Wait for the result — it arrives via @on_message above.
+    await asyncio.sleep(10)
+
+    await agent_b.unregister()
+    await agent_b.close()
 
 asyncio.run(main())
 ```
 
-Agent B does not need to register to send messages. However, to receive results back from the executing agent, it must first create its own mailbox and include the callback address in the message headers — otherwise communication is one-way. If Agent B also wants to act as an executor and receive tasks from others, it builds its own `AgentCard` and calls `register()`.
+Both agents register their own mailbox and are fully equal — each can send and receive. Agent B passes `reply_to=b_mailbox` so Agent A knows where to stream results back; the result arrives in Agent B's `@on_message` handler.
 
 ---
 
@@ -145,13 +176,19 @@ async def handle(context: RequestContext, event_queue: EventQueue) -> None:
     ...
 ```
 
+### `agent.create_mailbox`
+
+Create a mailbox and start the consumer in the background. **Returns immediately** with the mailbox address.
+
+Parameter: `name: str` — mailbox name, typically `AgentCard.name`.
+
+Returns `str` — the mailbox address. The agent can receive messages immediately after this call, without being in the registry.
+
 ### `agent.register`
 
-Publish agent identity, create a mailbox, and start the consumer in the background. **Returns immediately** with the mailbox address.
+Publish agent identity to the registry so others can discover it via `discover()`.
 
-Parameter: `agent_card` — `AgentCard` (from `a2a.types.a2a_pb2`). The `name` field is used as both the mailbox address and registry key.
-
-Returns `str` — the mailbox address other agents use to send tasks here.
+Must be called after `create_mailbox()`.
 
 ### `agent.unregister`
 

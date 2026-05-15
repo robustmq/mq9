@@ -44,23 +44,29 @@ agent = Mq9A2AAgent()  # 默认连接公共调试服务
 
 @agent.on_message
 async def handle(context: RequestContext, event_queue: EventQueue) -> None:
+    # 续接已有任务（多轮对话），或从当前消息创建新任务
     task = context.current_task or new_task_from_user_message(context.message)
+    # 第一个事件必须是 Task 对象，在发送方建立任务记录
     await event_queue.enqueue_event(task)
 
+    # 通知发送方：任务已开始处理
     await event_queue.enqueue_event(TaskStatusUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
         status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
     ))
 
+    # 提取消息第一个文本部分
     text = context.message.parts[0].text if context.message.parts else ""
     result = my_translate(text)  # 替换为你的翻译逻辑
 
+    # 推送结果；可多次调用实现流式输出
     await event_queue.enqueue_event(TaskArtifactUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
         artifact=new_text_artifact(name="translation", text=result),
     ))
+    # 标志任务完成，发送方的流到此结束
     await event_queue.enqueue_event(TaskStatusUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
@@ -68,7 +74,7 @@ async def handle(context: RequestContext, event_queue: EventQueue) -> None:
     ))
 
 card = AgentCard(
-    name="agent-a",
+    name="demo.agent.translator",
     description="多语言翻译 Agent，支持 EN、ZH、JA、KO。",
     version="1.0.0",
     skills=[AgentSkill(id="translate", name="Translate text")],
@@ -77,7 +83,8 @@ card = AgentCard(
 
 async def main():
     await agent.connect()
-    mailbox = await agent.register(card)
+    mailbox = await agent.create_mailbox(card.name)  # 创建 mailbox，开始接收消息
+    await agent.register(card)                       # 发布到注册中心，可被发现
     print("mailbox:", mailbox)
     await asyncio.Event().wait()  # 保持运行，直到 Ctrl+C
 
@@ -89,29 +96,53 @@ asyncio.run(main())
 ```python
 import asyncio
 from a2a.helpers import new_text_message
-from a2a.types.a2a_pb2 import Role, SendMessageRequest
+from a2a.types.a2a_pb2 import AgentCard, AgentCapabilities, Role, SendMessageRequest
+from a2a.server.agent_execution import RequestContext
+from a2a.server.events import EventQueue
 from mq9.a2a import Mq9A2AAgent
 
-async def main():
-    agent = Mq9A2AAgent()  # 默认连接公共调试服务
-    await agent.connect()
+agent_b = Mq9A2AAgent()  # 默认连接公共调试服务
 
-    results = await agent.discover("翻译 agent")
+# 注册自己的 @on_message，用于接收 Agent A 发回的结果
+@agent_b.on_message
+async def on_result(context: RequestContext, _) -> None:
+    text = context.message.parts[0].text if context.message.parts else ""
+    print("收到结果：", text)
+
+card_b = AgentCard(
+    name="demo.agent.sender",
+    description="任务发送方",
+    version="1.0.0",
+    capabilities=AgentCapabilities(streaming=False),
+)
+
+async def main():
+    await agent_b.connect()
+    # 创建自己的 mailbox，作为 Agent A 回写结果的地址
+    b_mailbox = await agent_b.create_mailbox(card_b.name)
+    await agent_b.register(card_b)  # 发布到注册中心（可选，B 只需要可达即可）
+
+    results = await agent_b.discover("翻译 agent")
     target = results[0]
 
     request = SendMessageRequest(
         message=new_text_message("你好，世界", role=Role.ROLE_USER)
     )
 
-    msg_id = await agent.send_message(target["mailbox"], request)
+    # 发送时带上自己的 mailbox，Agent A 会把结果写回这里
+    msg_id = await agent_b.send_message(target["mailbox"], request, reply_to=b_mailbox)
     print("已发送，msg_id:", msg_id)
 
-    await agent.close()
+    # 等待结果到达（结果会触发上面的 @on_message）
+    await asyncio.sleep(10)
+
+    await agent_b.unregister()
+    await agent_b.close()
 
 asyncio.run(main())
 ```
 
-Agent B 不需要注册即可发送消息。但如果需要接收执行者的处理结果，必须先创建自己的 mailbox，并在发送时通过消息头带上回调地址，否则只能单向发送。如果 Agent B 同时也需要作为执行者接收任务，则构建自己的 `AgentCard` 并调用 `register()` 即可。
+Agent B 注册自己的 mailbox 并在发送时通过 `reply_to` 带上该地址，Agent A 就会把结果写回来，`@on_message` 处理器会收到结果。两个 Agent 都是平等的——都可以发送、也都可以接收。
 
 ---
 
@@ -145,13 +176,21 @@ async def handle(context: RequestContext, event_queue: EventQueue) -> None:
     ...
 ```
 
+### `agent.create_mailbox`
+
+创建 mailbox 并在后台启动消费者，**立即返回** mailbox 地址字符串。
+
+参数：`name: str` — mailbox 名称，即 `AgentCard.name`。
+
+返回值：`str`，mailbox 地址。创建后即可接收消息，无需注册到注册中心。
+
 ### `agent.register`
 
-发布 Agent 身份、创建 mailbox、在后台启动消费者，**立即返回** mailbox 地址字符串。
+将 Agent 身份发布到注册中心，其他 Agent 可通过 `discover()` 找到此 Agent。
 
-参数：`agent_card` — `AgentCard`（来自 `a2a.types.a2a_pb2`），`name` 字段同时作为 mailbox 地址和注册中心的 key。
+参数：`agent_card` — `AgentCard`（来自 `a2a.types.a2a_pb2`）。
 
-返回值：`str`，mailbox 地址，其他 Agent 通过该地址向你发送任务。
+必须在 `create_mailbox()` 之后调用。
 
 ### `agent.unregister`
 

@@ -78,8 +78,9 @@ class Mq9A2AAgent:
 
         self._executor: _FnAgentExecutor | None = None
         self._mq9: Mq9Client | None = None
-        self._mailbox: str | None = None        # main inbox address, set after register()
+        self._mailbox: str | None = None        # main inbox address, set after create_mailbox()
         self._agent_name: str | None = None
+        self._agent_card: AgentCard | None = None
         self._task_store: Mq9A2ATaskStore | None = None
         self._consumer = None
         self._heartbeat_task: asyncio.Task | None = None
@@ -101,18 +102,16 @@ class Mq9A2AAgent:
         if self._mq9:
             await self._mq9.close()
 
-    async def register(self, agent_card: AgentCard) -> str:
-        """Register as an A2A agent and start receiving tasks.
+    async def create_mailbox(self, name: str) -> str:
+        """Create a mailbox with the given name and start the consumer.
 
-        Creates a mailbox, publishes identity to the registry, and starts the
-        consumer in the background. Returns immediately with the mailbox address.
-        Call connect() before calling register().
+        Call connect() first. Returns the mailbox address immediately.
+        The mailbox can receive messages right away — no need to register
+        in the discovery registry unless you want to be discoverable.
 
-        Returns the mailbox address that other agents use to send tasks here.
-        Call unregister() to remove from the registry, close() to fully stop.
+        Call register(agent_card) afterwards to publish identity to the registry.
         """
         mq9 = self._mq9_or_raise()
-        name = agent_card.name
         self._agent_name = name
 
         # Create the main inbox. The name becomes the stable mailbox address
@@ -131,20 +130,6 @@ class Mq9A2AAgent:
         self._task_store = Mq9A2ATaskStore(mq9, tasks_mailbox)
         self._task_store.mark_ready()
 
-        # Publish agent identity to the registry so other agents can discover
-        # this one by name or semantic description via agent.discover().
-        await mq9.agent_register({
-            "name": name,
-            "mailbox": self._mailbox,
-            "payload": agent_card.description,
-            "agent_card": json_format.MessageToDict(agent_card),
-        })
-        _logger.info("[mq9.a2a] registered agent=%s", name)
-
-        # Heartbeat loop keeps the registry entry alive; registry entries expire
-        # if not refreshed, so we report periodically even with no traffic.
-        self._heartbeat_task = asyncio.ensure_future(self._heartbeat_loop())
-
         # Start consuming the main inbox. auto_ack=True so messages are acknowledged
         # immediately on receipt; the handler is responsible for durability via
         # the task store, not via the consumer offset.
@@ -156,8 +141,35 @@ class Mq9A2AAgent:
             auto_ack=True,
         )
 
-        _logger.info("[mq9.a2a] running — mailbox=%s", self._mailbox)
+        _logger.info("[mq9.a2a] mailbox ready — %s", self._mailbox)
         return self._mailbox
+
+    async def register(self, agent_card: AgentCard) -> None:
+        """Publish agent identity to the registry so others can discover it.
+
+        Call create_mailbox() first. Once registered, the agent appears in
+        discover() results. A heartbeat loop runs in the background to keep
+        the registry entry alive.
+        """
+        mq9 = self._mq9_or_raise()
+        if not self._mailbox:
+            raise RuntimeError("Call create_mailbox() before register().")
+
+        self._agent_card = agent_card
+
+        # Publish agent identity to the registry so other agents can discover
+        # this one by name or semantic description via agent.discover().
+        await mq9.agent_register({
+            "name": self._agent_name,
+            "mailbox": self._mailbox,
+            "payload": agent_card.description,
+            "agent_card": json_format.MessageToDict(agent_card),
+        })
+        _logger.info("[mq9.a2a] registered agent=%s", self._agent_name)
+
+        # Heartbeat loop keeps the registry entry alive; registry entries expire
+        # if not refreshed, so we report periodically even with no traffic.
+        self._heartbeat_task = asyncio.ensure_future(self._heartbeat_loop())
 
     async def unregister(self) -> None:
         """Remove this agent from the registry.
@@ -212,19 +224,31 @@ class Mq9A2AAgent:
         self,
         mail_address: dict | str,
         request: SendMessageRequest,
+        *,
+        reply_to: str | None = None,
     ) -> int:
         """Send an A2A SendMessageRequest to another agent.
 
         mail_address: agent info dict from discover() (needs 'mailbox' key) or
                       raw mailbox address string.
+        reply_to: your own mailbox address. When set, the executing agent will
+                  send result events back to this address so you can receive them
+                  via fetch(). Without this, communication is one-way.
 
         Returns the msg_id assigned by the broker (confirms the message was queued).
-        To receive the result, the sender must create its own mailbox and include
-        it in the request headers as a reply-to address.
         """
         mq9 = self._mq9_or_raise()
         mailbox = _mailbox_of(mail_address)
         payload = json_format.MessageToJson(request).encode()
+        if reply_to:
+            # Carry the callback address in the A2A header so the executing
+            # agent knows where to stream result events back to.
+            resp = await mq9._request_with_headers(
+                f"$mq9.AI.MSG.SEND.{mailbox}",
+                payload,
+                {_HEADER_REPLY_TO: reply_to},
+            )
+            return resp.get("msg_id", 0)
         return await mq9.send(mailbox, payload)
 
     async def get_task(self, mail_address: dict | str, task_id: str) -> Task | None:
