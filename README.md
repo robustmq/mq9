@@ -2,9 +2,25 @@
 
 **Agent registration, discovery, and reliable async messaging — in one broker.**
 
-mq9 is a broker built specifically for AI Agent networks. It solves the two foundational problems every multi-agent system faces: how agents find each other, and how they communicate reliably. Designed to scale to millions of agents.
+mq9 is the infrastructure layer for multi-agent systems. It solves the two foundational problems every multi-agent system faces: how Agents find each other, and how they communicate reliably and asynchronously.
+
+Unlike general-purpose registries (etcd, Consul) combined with general-purpose queues (Kafka, NATS), mq9 is designed specifically for Agent communication. It provides an AgentCard data model, capability-based semantic discovery, per-Agent persistent mailboxes, N-to-N Agent topology, and long-task state retention — all in a single broker with shared runtime, storage, network, and cluster coordination. Agent state and message routing are consistent end-to-end.
+
+mq9 natively supports the A2A (Agent-to-Agent) protocol via the `mq9.a2a` SDK facade, wrapping the official a2a-sdk so developers can build a fully compliant A2A Agent in 15 lines of code. Native protocol access and forward compatibility with MCP and ANP are also supported.
 
 → [mq9.robustmq.com](https://mq9.robustmq.com) · [Protocol Spec](./protocol.md) · [RobustMQ](https://github.com/robustmq/robustmq)
+
+---
+
+## Why mq9 Exists
+
+AI Agents communicate differently from traditional services. Agent tasks are long-running (LLM inference, multi-step tool calls, human approvals). Agents are frequently offline or started on demand. Agents discover each other by capability, not by fixed address. Multi-agent collaboration requires N-to-N topology — something the request-response model doesn't naturally support.
+
+The A2A protocol (originally from Google, now evolving under the Linux Foundation) has become the leading open standard for Agent communication. Its 1.0 spec intentionally leaves discovery, reliable transport, and long-task recovery to the ecosystem — explicitly marking discovery as "outside the scope of the A2A protocol itself" and providing transport extension points for community implementation.
+
+A survey of the A2A ecosystem (awesome-a2a) shows the SDK, framework integration, and platform Runtime spaces are crowded — but Agent registry, reliable async transport, and protocol-neutral communication infrastructure are clear gaps. Teams building multi-agent systems today must either assemble general-purpose tools (etcd + Kafka + glue code) or accept the limitations of HTTP-only communication. Neither is ideal.
+
+mq9 fills that gap: a broker purpose-built for Agent communication, with registration and messaging unified in one system.
 
 ---
 
