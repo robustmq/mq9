@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" width="760" height="300" font-family="Inter,-apple-system,BlinkMacSystemFont,sans-serif">
+  <defs>
+    <marker id="arr-slate" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L8,4 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="arr-blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L8,4 z" fill="#3b82f6"/>
+    </marker>
+  </defs>
+
+  <!-- ── Broker Node 1 ── -->
+  <rect x="40" y="40" width="160" height="90" rx="8" fill="white" stroke="#38bdf8" stroke-width="2"/>
+  <rect x="40" y="40" width="160" height="32" rx="8" fill="#e0f2fe"/>
+  <rect x="40" y="60" width="160" height="12" fill="#e0f2fe"/>
+  <text x="120" y="62" text-anchor="middle" font-size="13" font-weight="700" fill="#0c4a6e">Broker Node 1</text>
+  <text x="120" y="90" text-anchor="middle" font-size="12" fill="#0369a1">active</text>
+  <rect x="60" y="102" width="80" height="18" rx="4" fill="#dcfce7"/>
+  <text x="100" y="115" text-anchor="middle" font-size="11" font-weight="600" fill="#15803d">● running</text>
+
+  <!-- ── Broker Node 2 ── -->
+  <rect x="300" y="40" width="160" height="90" rx="8" fill="white" stroke="#38bdf8" stroke-width="2"/>
+  <rect x="300" y="40" width="160" height="32" rx="8" fill="#e0f2fe"/>
+  <rect x="300" y="60" width="160" height="12" fill="#e0f2fe"/>
+  <text x="380" y="62" text-anchor="middle" font-size="13" font-weight="700" fill="#0c4a6e">Broker Node 2</text>
+  <text x="380" y="90" text-anchor="middle" font-size="12" fill="#0369a1">active</text>
+  <rect x="320" y="102" width="80" height="18" rx="4" fill="#dcfce7"/>
+  <text x="360" y="115" text-anchor="middle" font-size="11" font-weight="600" fill="#15803d">● running</text>
+
+  <!-- ── Broker Node N (dashed = scale-out) ── -->
+  <rect x="560" y="40" width="160" height="90" rx="8" fill="white" stroke="#7dd3fc" stroke-width="2" stroke-dasharray="7,4"/>
+  <rect x="560" y="40" width="160" height="32" rx="8" fill="#f0f9ff"/>
+  <rect x="560" y="60" width="160" height="12" fill="#f0f9ff"/>
+  <text x="640" y="62" text-anchor="middle" font-size="13" font-weight="700" fill="#0c4a6e">Broker Node N</text>
+  <text x="640" y="90" text-anchor="middle" font-size="12" fill="#0369a1">horizontal scale-out</text>
+  <rect x="580" y="102" width="120" height="18" rx="4" fill="#fef9c3"/>
+  <text x="640" y="115" text-anchor="middle" font-size="11" font-weight="600" fill="#854d0e">+ add node live</text>
+
+  <!-- ── Inter-node lines ── -->
+  <line x1="202" y1="85" x2="298" y2="85" stroke="#7dd3fc" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <line x1="462" y1="85" x2="558" y2="85" stroke="#7dd3fc" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="250" y="78" text-anchor="middle" font-size="10" fill="#7dd3fc">sync</text>
+  <text x="510" y="78" text-anchor="middle" font-size="10" fill="#7dd3fc">sync</text>
+
+  <!-- ── Vertical lines down to collector ── -->
+  <line x1="120" y1="132" x2="120" y2="185" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="380" y1="132" x2="380" y2="185" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="640" y1="132" x2="640" y2="185" stroke="#94a3b8" stroke-width="1.5"/>
+
+  <!-- ── Horizontal collector bar ── -->
+  <line x1="120" y1="185" x2="640" y2="185" stroke="#94a3b8" stroke-width="1.5"/>
+
+  <!-- ── Arrow down to Meta Service ── -->
+  <line x1="380" y1="185" x2="380" y2="210" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr-slate)"/>
+
+  <!-- ── Meta Service box ── -->
+  <rect x="240" y="212" width="280" height="68" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.8"/>
+  <text x="380" y="238" text-anchor="middle" font-size="14" font-weight="700" fill="#1e40af">Meta Service</text>
+  <text x="380" y="258" text-anchor="middle" font-size="12" fill="#3b82f6">Raft consensus · cluster membership</text>
+  <text x="380" y="274" text-anchor="middle" font-size="12" fill="#3b82f6">placement · leader election</text>
+
+  <!-- ── SDK note label ── -->
+  <rect x="40" y="155" width="130" height="22" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="105" y="170" text-anchor="middle" font-size="11" fill="#64748b">SDK connects to any node</text>
+</svg>

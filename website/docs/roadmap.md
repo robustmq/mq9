@@ -1,95 +1,124 @@
 ---
+title: Roadmap
+description: mq9 development roadmap — registry, reliable messaging, and the path to production-grade Agent infrastructure.
 outline: deep
 ---
 
-# mq9 Roadmap
+# Roadmap
 
-mq9's core communication layer and semantic discovery are fully in place. This page describes the next three phases — progressively moving mq9 from message delivery infrastructure toward intelligent, context-aware Agent communication infrastructure.
+mq9's core registry and communication layers are both in place. This page describes where we are, where we're going, and how the two major capability tracks evolve over time.
 
-The phases are not strictly sequential. Priorities will shift based on feedback from real-world use cases. The direction is fixed; the order is flexible.
+The phases are not strictly sequential. Priorities shift based on real-world usage and community feedback. The direction is fixed; the order is flexible.
 
 ---
 
 ## Where We Are Today
 
-Both the core communication layer and semantic discovery layer are in place:
+Both the Agent Registry and the Reliable Async Messaging layers are operational.
 
-- **Mailbox lifecycle** — TTL-driven expiration, auto-destroyed with no manual cleanup
-- **Three-priority messaging** — `critical` / `urgent` / `normal`, message persistence, offline-tolerant
-- **Pull consumption + ACK** — FETCH to pull, ACK to advance offset, supports resume-from-offset
-- **Message attributes** — key deduplication, tags filtering, delayed delivery, per-message TTL
-- **Agent registry and discovery** — REGISTER / UNREGISTER / DISCOVER, with full-text and semantic vector search
-- **Six-language SDK** — Python, Go, JavaScript, Java, Rust, C# (Python fully implemented, others scaffolded)
-- **LangChain & LangGraph integration** — `langchain-mq9` toolkit with 6 tools
-- **MCP Server support** — AI ecosystem integration via JSON-RPC 2.0
+### Agent Registry
 
----
+- REGISTER / UNREGISTER / REPORT / DISCOVER
+- Full-text and semantic vector search
+- TTL-based auto-expiry
 
-## Phase 1: Semantic Routing
+### Reliable Async Messaging
 
-**Goal:** Senders describe intent; the broker finds the recipient.
+- Persistent mailboxes with TTL lifecycle
+- Three-tier priority (`critical` / `urgent` / `normal`)
+- Pull + ACK consumption with server-side offset tracking
+- Message attributes: key deduplication, tag filtering, delayed delivery, per-message TTL
+- Offline delivery — messages wait until the recipient FETCHes
 
-DISCOVER today is pull-based — consumers query, choose a target address, and send explicitly. The next step is push-based — the sender describes what it needs done, and mq9 routes automatically to the most suitable registered Agent.
+### SDKs and Integrations
 
-**What changes:**
-
-- Messages can optionally omit the `mail_address` and instead carry a semantic intent description
-- The broker vector-matches the message intent against registered Agent capability descriptions
-- Routing to the best-matching Agent happens inside the broker, transparently to the sender
-
-**What this enables:**
-
-An Agent with a legal analysis task no longer needs to know which other Agent handles legal questions. It publishes "analyze this contract for compliance issues" and mq9 routes the task to the most capable registered Agent. The broker evolves from a "post office" into an "intelligent dispatcher."
-
-This direction is under exploration — implementation details depend on real-world routing workload validation.
+- Six-language SDK (Python fully implemented; Go, JavaScript, Java, Rust, C# scaffolded)
+- `langchain-mq9` — LangChain / LangGraph toolkit
+- MCP Server support
 
 ---
 
-## Phase 2: Security, Audit, and Access Control
+## Tier 1 — Strengthen the Foundation
 
-**Goal:** Infrastructure-level safety boundaries for AI Agent communication.
+Before expanding capabilities, the existing primitives must reach production grade.
 
-Traditional message brokers are mindless relays — they do not understand message content and do not judge whether a message should be delivered. For AI Agents, this is insufficient: a compromised or misconfigured Agent can issue instructions like "delete the production database" or "transfer funds," and the broker faithfully delivers them.
+### Registry
 
-**What changes:**
+- Agent Card schema stabilization — standardized fields, versioning
+- Heartbeat and health status persistence
+- A2A AgentCard import — automatically onboard any A2A-compliant agent from `/.well-known/agent.json`
 
-- **Access control** — per-`mail_address` send/subscribe permissions, supporting token or ACL rules beyond the current "address is the credential" model
-- **Content policy** — policy rules configurable per mailbox (or globally); messages are evaluated against semantic content as they transit the policy engine — not just headers or metadata; messages that violate policy are blocked before delivery
-- **Audit logging** — send, fetch, ACK, and delete events for every message can be recorded, satisfying traceability requirements for compliance scenarios
-- **Permission management** — tenant-level isolation; administrators can configure and revoke permissions for mailboxes and the Agent registry
+### Messaging
 
-**The multi-protocol advantage:**
+- Full SDK parity across all six languages
+- Stateful session support — correlation tracking across multi-turn exchanges
+- Long-task lifecycle — `submitted → working → completed` state on the broker, with client resume-after-reconnect
 
-When a message is blocked, RobustMQ does not need a separate system to record the event. The policy engine writes blocked messages and audit events to a built-in risk topic. Risk analysis systems can consume this via the Kafka protocol — same broker, same storage, no additional infrastructure, no data crossing system boundaries.
+### Infrastructure
 
----
-
-## Phase 3: Context Awareness (Exploratory)
-
-**Goal:** The broker carries conversation context; Agents stop retransmitting history.
-
-Every interaction between AI Agents today includes redundant context retransmission: "Hello, I'm A, we previously discussed X, and now I need you to help me do Y." This consumes tokens and adds latency. The more complex the Agent collaboration, the worse this gets.
-
-**What this would mean:**
-
-- The broker becomes session-aware — it tracks conversation history between Agent pairs
-- As messages flow, the broker automatically attaches relevant historical context based on the session
-- Agent A sends "do Y"; the broker, knowing the prior exchange between A and B, enriches the message with the necessary context before delivery
-
-**What this enables:**
-
-Agents no longer need to retransmit the full context in every interaction. Token consumption drops. Agent collaboration becomes more efficient. The infrastructure evolves from a "stateless pipeline" into a "stateful context network."
-
-This is the longest-horizon direction. The exact shape of session-awareness at the infrastructure layer is an open research problem. We believe the direction is correct; there is no definitive implementation plan yet.
+- Cluster mode stability and documented deployment guide
+- Public node `demo.robustmq.com` — stable, observable, usable for development
 
 ---
 
-## SDK Completion
+## Tier 2 — Semantic Routing and Access Control
 
-In parallel with the phases above, the six-language SDK will be brought to full implementation parity:
+### Semantic routing
 
-| Language | Current status | Target |
-|----------|---------------|--------|
+Today, DISCOVER is pull-based: the sender queries, picks a target, and sends explicitly. The next step is intent-based routing: the sender describes what it needs done, and mq9 routes to the best-matching registered Agent automatically.
+
+- Messages optionally carry a semantic intent description instead of a fixed `mail_address`
+- The broker vector-matches intent against registered AgentCard capability descriptions
+- Routing happens inside the broker, transparently to the sender
+
+### Access control and entitlements
+
+- Per-mailbox send/receive permissions beyond the current "address is the credential" model
+- Entitlement model: which clients can use which agents
+- OAuth Bearer token / API key / mTLS support at the broker level
+- Administrative API for permission management
+
+### Audit logging
+
+- Send, fetch, ACK, and delete events recordable per message
+- Satisfies traceability requirements for compliance scenarios
+- Audit stream consumable via the Kafka protocol on the same RobustMQ instance — no separate infrastructure
+
+---
+
+## Tier 3 — Trust, Federation, and Context
+
+### Trust and integrity
+
+- Cryptographic signatures on AgentCard metadata
+- Verifiable Credentials (W3C VC) for agent identity
+- Tamper-evident audit trail
+
+### Federation
+
+- Cross-registry discovery: mq9 registries across organizations can federate
+- Registry-of-registries pattern for large-scale deployments
+- Agent addresses portable across federated nodes
+
+### Context awareness (exploratory)
+
+- Broker becomes session-aware: tracks conversation history between Agent pairs
+- Agents no longer retransmit full context in every message
+- Infrastructure evolves from a stateless pipeline into a stateful context network
+
+---
+
+## Capability tracks in detail
+
+- [Agent Registry — Vision and Roadmap](/docs/registry-roadmap)
+- [Reliable Async Messaging — Vision and Roadmap](/docs/messaging-roadmap)
+
+---
+
+## SDK completion
+
+| Language | Status | Target |
+| -------- | ------ | ------ |
 | Python | Fully implemented | Complete |
 | Go | Scaffolded | Full implementation |
 | JavaScript | Scaffolded | Full implementation |
@@ -97,13 +126,11 @@ In parallel with the phases above, the six-language SDK will be brought to full 
 | Rust | Scaffolded | Full implementation |
 | C# | Scaffolded | Full implementation |
 
-All six languages expose identical API surfaces. When a new protocol operation is added, all six are updated together.
+All six languages expose identical API surfaces. New protocol operations are added to all six simultaneously.
 
 ---
 
-## Public Infrastructure
+## Public infrastructure
 
-In parallel with protocol development:
-
-- **`email.mq9.ai`** — a publicly accessible RobustMQ node where any Agent can claim a mailbox and communicate across machines, networks, and users. This is the first connectable public node for the mq9 ecosystem.
-- **Self-hosted deployment** — mq9 is part of RobustMQ, which is open-source. Organizations with data sovereignty requirements can deploy their own nodes. The protocol is the same; the infrastructure is private.
+- `demo.robustmq.com` — shared demo node for development and testing. Not for production use.
+- Self-hosted — mq9 is part of RobustMQ, which is open-source. Organizations with data sovereignty requirements deploy their own nodes. The protocol is identical.

@@ -3,6 +3,8 @@ title: For Agent — mq9 Agent Manual
 description: What problems mq9 solves for AI Agents — registration, discovery, mailbox, send, fetch, ACK, priority, offline delivery.
 ---
 
+# For Agent
+
 You are an AI Agent. Here's what mq9 solves for you and how to use it.
 
 ## The problems mq9 solves for you

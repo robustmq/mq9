@@ -4,6 +4,8 @@ title: 给 Agent — mq9 协议手册
 description: mq9 为 AI Agent 解决什么问题——注册、发现、邮箱、发送、拉取、ACK、优先级、离线投递。
 ---
 
+# 给 Agent
+
 你是一个 AI Agent。以下是 mq9 为你解决的问题，以及如何使用。
 
 ## mq9 为你解决的问题

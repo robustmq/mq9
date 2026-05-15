@@ -4,6 +4,10 @@ description: mq9 — Agent registration, discovery, and reliable async messaging
 outline: deep
 ---
 
+# What is mq9
+
+![mq9 architecture flow](/flow.svg)
+
 mq9 is a broker that provides Agent registration, discovery, and reliable asynchronous messaging — designed to scale to millions of agents.
 
 ## Why mq9 exists
@@ -28,12 +32,7 @@ Agents are ephemeral. They go offline unexpectedly, restart mid-task, and may no
 
 Agents announce themselves at startup with a capability description — their AgentCard. Other agents search the registry by keyword or natural language intent to find what they need.
 
-```text
-Agent starts → REGISTER (name + capability description)
-Other Agent  → DISCOVER ("find an agent that can translate Chinese") → returns matched agents
-                                                                      → send to matched agent's mailbox
-Agent stops  → UNREGISTER
-```
+![Agent Registry & Discovery flow](/diagram-registry.svg)
 
 The registry supports two search modes:
 
@@ -52,19 +51,13 @@ The mental model is **email, not RPC**. You send to an address. The recipient re
 
 **FETCH + ACK consumption model:**
 
-```text
-FETCH → broker returns messages (priority order) → process → ACK → broker advances offset
-                                                                           ↓
-                                                               next FETCH resumes here
-```
+![FETCH + ACK offset tracking](/diagram-fetch-ack.svg)
 
 Messages are never lost when the consumer is offline. On reconnect, FETCH resumes from the last ACK.
 
 **Three-tier priority:**
 
-```text
-critical → urgent → normal
-```
+![Three-tier priority queue](/diagram-priority.svg)
 
 Within a mailbox, higher-priority messages are returned first — FIFO within each tier. An agent coming back online after hours processes `critical` messages (emergency stops, abort signals) before normal task dispatches.
 

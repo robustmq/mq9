@@ -42,18 +42,6 @@ export default defineConfig({
           { text: 'RobustMQ', link: 'https://github.com/robustmq/robustmq' },
         ],
         sidebar: {
-          '/sdk/': [
-            {
-              text: 'SDK',
-              items: [
-                { text: 'Python', link: '/sdk/python' },
-                { text: 'JavaScript', link: '/sdk/javascript' },
-                { text: 'Go', link: '/sdk/go' },
-                { text: 'Rust', link: '/sdk/rust' },
-                { text: 'Java', link: '/sdk/java' },
-              ],
-            },
-          ],
           '/docs/': [
             {
               text: 'Getting Started',
@@ -67,6 +55,7 @@ export default defineConfig({
             {
               text: 'Deep Dives',
               items: [
+                { text: 'Architecture', link: '/docs/architecture' },
                 { text: 'Features', link: '/docs/features' },
                 { text: 'Protocol', link: '/docs/protocol' },
                 { text: 'Scenarios', link: '/docs/scenarios' },
@@ -74,9 +63,18 @@ export default defineConfig({
               ],
             },
             {
+              text: 'SDK',
+              items: [
+                { text: 'Python', link: '/docs/sdk/python' },
+                { text: 'JavaScript', link: '/docs/sdk/javascript' },
+                { text: 'Go', link: '/docs/sdk/go' },
+                { text: 'Rust', link: '/docs/sdk/rust' },
+                { text: 'Java', link: '/docs/sdk/java' },
+              ],
+            },
+            {
               text: 'Integrations',
               items: [
-                { text: 'SDK Reference', link: '/docs/sdk/' },
                 { text: 'LangChain / LangGraph', link: '/docs/langchain' },
                 { text: 'MCP Server', link: '/docs/mcp' },
               ],
@@ -86,6 +84,8 @@ export default defineConfig({
               items: [
                 { text: 'FAQ', link: '/docs/faq' },
                 { text: 'Roadmap', link: '/docs/roadmap' },
+                { text: 'Registry Roadmap', link: '/docs/registry-roadmap' },
+                { text: 'Messaging Roadmap', link: '/docs/messaging-roadmap' },
               ],
             },
           ],
@@ -105,18 +105,6 @@ export default defineConfig({
           { text: 'RobustMQ', link: 'https://github.com/robustmq/robustmq' },
         ],
         sidebar: {
-          '/zh/sdk/': [
-            {
-              text: 'SDK',
-              items: [
-                { text: 'Python', link: '/zh/sdk/python' },
-                { text: 'JavaScript', link: '/zh/sdk/javascript' },
-                { text: 'Go', link: '/zh/sdk/go' },
-                { text: 'Rust', link: '/zh/sdk/rust' },
-                { text: 'Java', link: '/zh/sdk/java' },
-              ],
-            },
-          ],
           '/zh/docs/': [
             {
               text: '快速入门',
@@ -130,6 +118,7 @@ export default defineConfig({
             {
               text: '深入了解',
               items: [
+                { text: '系统架构', link: '/zh/docs/architecture' },
                 { text: '功能特性', link: '/zh/docs/features' },
                 { text: '协议规范', link: '/zh/docs/protocol' },
                 { text: '使用场景', link: '/zh/docs/scenarios' },
@@ -137,9 +126,18 @@ export default defineConfig({
               ],
             },
             {
+              text: 'SDK',
+              items: [
+                { text: 'Python', link: '/zh/docs/sdk/python' },
+                { text: 'JavaScript', link: '/zh/docs/sdk/javascript' },
+                { text: 'Go', link: '/zh/docs/sdk/go' },
+                { text: 'Rust', link: '/zh/docs/sdk/rust' },
+                { text: 'Java', link: '/zh/docs/sdk/java' },
+              ],
+            },
+            {
               text: '集成',
               items: [
-                { text: 'SDK 参考', link: '/zh/docs/sdk/' },
                 { text: 'LangChain / LangGraph', link: '/zh/docs/langchain' },
                 { text: 'MCP Server', link: '/zh/docs/mcp' },
               ],
@@ -149,6 +147,8 @@ export default defineConfig({
               items: [
                 { text: '常见问题', link: '/zh/docs/faq' },
                 { text: '路线图', link: '/zh/docs/roadmap' },
+                { text: '注册中心规划', link: '/zh/docs/registry-roadmap' },
+                { text: '通信规划', link: '/zh/docs/messaging-roadmap' },
               ],
             },
           ],
