@@ -1,3 +1,7 @@
+---
+outline: deep
+---
+
 # mq9 Roadmap
 
 mq9's core communication layer and semantic discovery are fully in place. This page describes the next three phases — progressively moving mq9 from message delivery infrastructure toward intelligent, context-aware Agent communication infrastructure.

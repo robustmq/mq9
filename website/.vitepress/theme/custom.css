@@ -104,7 +104,8 @@ div[class*='language-'] {
   border: 1px solid var(--vp-c-divider) !important;
 }
 
-div[class*='language-'] code {
+div[class*='language-'] code,
+div[class*='language-'] code span {
   font-size: 0.82rem;
   color: #e5e5e5 !important;
 }

@@ -1,4 +1,5 @@
 ---
+outline: deep
 title: 快速开始
 ---
 

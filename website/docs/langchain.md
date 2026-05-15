@@ -1,3 +1,7 @@
+---
+outline: deep
+---
+
 # LangChain & LangGraph Integration
 
 ## Overview

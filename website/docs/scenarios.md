@@ -1,3 +1,7 @@
+---
+outline: deep
+---
+
 # Scenarios
 
 Eight concrete Agent communication patterns, ordered from registry and discovery patterns through to messaging patterns. Each example uses the NATS CLI or Python SDK against `nats://demo.robustmq.com:4222`.

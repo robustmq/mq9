@@ -1,3 +1,7 @@
+---
+outline: deep
+---
+
 # MCP Server Integration
 
 ## Overview

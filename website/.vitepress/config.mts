@@ -34,7 +34,8 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: 'Home', link: '/' },
-          { text: 'Docs', link: '/docs/overview' },
+          { text: 'Docs', link: '/docs/what' },
+          { text: 'Blogs', link: 'https://robustmq.com/en/Blogs/' },
           { text: 'GitHub', link: 'https://github.com/robustmq/mq9' },
           { text: 'RobustMQ', link: 'https://github.com/robustmq/robustmq' },
         ],
@@ -55,11 +56,10 @@ export default defineConfig({
             {
               text: 'Getting Started',
               items: [
-                { text: 'Overview', link: '/docs/overview' },
-                { text: 'Quick Start', link: '/docs/quick-start' },
                 { text: 'What is mq9', link: '/docs/what' },
                 { text: 'For Engineers', link: '/docs/for-engineer' },
                 { text: 'For Agents', link: '/docs/for-agent' },
+                { text: 'Quick Start', link: '/docs/quick-start' },
               ],
             },
             {
@@ -68,6 +68,7 @@ export default defineConfig({
                 { text: 'Features', link: '/docs/features' },
                 { text: 'Protocol', link: '/docs/protocol' },
                 { text: 'Scenarios', link: '/docs/scenarios' },
+                { text: 'Mailbox Naming', link: '/docs/mailbox-naming' },
               ],
             },
             {
@@ -96,7 +97,8 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: '首页', link: '/zh/' },
-          { text: '文档', link: '/zh/docs/' },
+          { text: '文档', link: '/zh/docs/what' },
+          { text: 'Blogs', link: 'https://robustmq.com/zh/Blogs/' },
           { text: 'GitHub', link: 'https://github.com/robustmq/mq9' },
           { text: 'RobustMQ', link: 'https://github.com/robustmq/robustmq' },
         ],
@@ -117,11 +119,10 @@ export default defineConfig({
             {
               text: '快速入门',
               items: [
-                { text: '概述', link: '/zh/docs/overview' },
-                { text: '快速开始', link: '/zh/docs/quick-start' },
                 { text: 'mq9 是什么', link: '/zh/docs/what' },
                 { text: '给工程师', link: '/zh/docs/for-engineer' },
                 { text: '给 Agent', link: '/zh/docs/for-agent' },
+                { text: '快速开始', link: '/zh/docs/quick-start' },
               ],
             },
             {
@@ -130,6 +131,7 @@ export default defineConfig({
                 { text: '功能特性', link: '/zh/docs/features' },
                 { text: '协议规范', link: '/zh/docs/protocol' },
                 { text: '使用场景', link: '/zh/docs/scenarios' },
+                { text: '邮箱命名规范', link: '/zh/docs/mailbox-naming' },
               ],
             },
             {
@@ -156,7 +158,6 @@ export default defineConfig({
   themeConfig: {
     siteTitle: false,
     logo: '/logo.jpg',
-    aside: false,
     socialLinks: [
       { icon: 'github', link: 'https://github.com/robustmq/mq9' },
     ],
