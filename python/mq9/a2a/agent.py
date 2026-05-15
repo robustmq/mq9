@@ -71,10 +71,18 @@ class Mq9A2AAgent:
         server: str = _DEFAULT_SERVER,
         mailbox_ttl: int = 0,
         request_timeout: float = _DEFAULT_TIMEOUT,
+        group_name: str | None = None,
+        deliver: str = "earliest",
+        num_msgs: int = 10,
+        max_wait_ms: int = 500,
     ) -> None:
         self._server = server
         self._mailbox_ttl = mailbox_ttl
         self._timeout = request_timeout
+        self._group_name = group_name       # None → auto-derive as "{name}.workers"
+        self._deliver = deliver
+        self._num_msgs = num_msgs
+        self._max_wait_ms = max_wait_ms
 
         self._executor: _FnAgentExecutor | None = None
         self._mq9: Mq9Client | None = None
@@ -133,11 +141,14 @@ class Mq9A2AAgent:
         # Start consuming the main inbox. auto_ack=True so messages are acknowledged
         # immediately on receipt; the handler is responsible for durability via
         # the task store, not via the consumer offset.
+        group = self._group_name or f"{name}.workers"
         self._consumer = await mq9.consume(
             self._mailbox,
             self._dispatch,
-            group_name=f"{name}.workers",
-            deliver="earliest",
+            group_name=group,
+            deliver=self._deliver,
+            num_msgs=self._num_msgs,
+            max_wait_ms=self._max_wait_ms,
             auto_ack=True,
         )
 

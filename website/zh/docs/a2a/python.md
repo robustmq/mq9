@@ -149,7 +149,16 @@ Agent B 注册自己的 mailbox 并在发送时通过 `reply_to` 带上该地址
 ## Mq9A2AAgent
 
 ```python
-Mq9A2AAgent(*, server: str = "nats://demo.robustmq.com:4222", mailbox_ttl: int = 0, request_timeout: float = 60)
+Mq9A2AAgent(
+    *,
+    server: str = "nats://demo.robustmq.com:4222",
+    mailbox_ttl: int = 0,
+    request_timeout: float = 60,
+    group_name: str | None = None,
+    deliver: str = "earliest",
+    num_msgs: int = 10,
+    max_wait_ms: int = 500,
+)
 ```
 
 | 参数 | 类型 | 说明 |
@@ -157,6 +166,10 @@ Mq9A2AAgent(*, server: str = "nats://demo.robustmq.com:4222", mailbox_ttl: int =
 | `server` | `str` | mq9 broker 的 NATS 地址。默认连接公共调试服务 `nats://demo.robustmq.com:4222`，可不填 |
 | `mailbox_ttl` | `int` | Mailbox 存活时间，秒（`0` 表示永久） |
 | `request_timeout` | `float` | 对外发送请求的默认超时时间，秒 |
+| `group_name` | `str \| None` | 消费组名称。不填时自动使用 `{mailbox名}.workers`，保证重启后从断点续消费 |
+| `deliver` | `str` | 消费起点：`"earliest"` 从最早未消费处开始，`"latest"` 只消费新消息 |
+| `num_msgs` | `int` | 每次 fetch 批量拉取的消息数，默认 `10` |
+| `max_wait_ms` | `int` | 每次 fetch 无消息时的最长等待时间，毫秒，默认 `500` |
 
 ### `agent.connect`
 

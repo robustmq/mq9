@@ -149,7 +149,16 @@ Both agents register their own mailbox and are fully equal — each can send and
 ## Mq9A2AAgent
 
 ```python
-Mq9A2AAgent(*, server: str = "nats://demo.robustmq.com:4222", mailbox_ttl: int = 0, request_timeout: float = 60)
+Mq9A2AAgent(
+    *,
+    server: str = "nats://demo.robustmq.com:4222",
+    mailbox_ttl: int = 0,
+    request_timeout: float = 60,
+    group_name: str | None = None,
+    deliver: str = "earliest",
+    num_msgs: int = 10,
+    max_wait_ms: int = 500,
+)
 ```
 
 | Parameter | Type | Description |
@@ -157,6 +166,10 @@ Mq9A2AAgent(*, server: str = "nats://demo.robustmq.com:4222", mailbox_ttl: int =
 | `server` | `str` | mq9 broker NATS URL. Defaults to the public debug server `nats://demo.robustmq.com:4222` — can be omitted during development |
 | `mailbox_ttl` | `int` | Mailbox TTL in seconds (`0` = permanent) |
 | `request_timeout` | `float` | Default timeout for outbound requests in seconds |
+| `group_name` | `str \| None` | Consumer group name. Defaults to `{mailbox}.workers` — ensures consumption resumes from the last offset after a restart |
+| `deliver` | `str` | Where to start consuming: `"earliest"` resumes from last offset, `"latest"` only receives new messages |
+| `num_msgs` | `int` | Number of messages to fetch per poll, default `10` |
+| `max_wait_ms` | `int` | Max time to wait per fetch when no messages are available, in milliseconds, default `500` |
 
 ### `agent.connect`
 
