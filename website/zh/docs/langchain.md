@@ -1,4 +1,5 @@
 ---
+outline: deep
 title: LangChain & LangGraph 集成
 ---
 

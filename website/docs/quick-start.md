@@ -1,3 +1,7 @@
+---
+outline: deep
+---
+
 # Quick Start
 
 This guide walks through mq9's core operations against the public demo server using the NATS CLI. No account, no configuration, no SDK — just a terminal.

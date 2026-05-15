@@ -1,3 +1,7 @@
+---
+outline: deep
+---
+
 # FAQ
 
 ## Do I need a special SDK to use mq9?

@@ -1,4 +1,5 @@
 ---
+outline: deep
 title: MCP Server 集成
 ---
 

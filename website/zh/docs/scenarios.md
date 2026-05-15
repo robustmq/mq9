@@ -1,4 +1,5 @@
 ---
+outline: deep
 title: 应用场景
 ---
 

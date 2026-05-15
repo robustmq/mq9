@@ -1,3 +1,7 @@
+---
+outline: deep
+---
+
 # Features
 
 mq9 provides two foundational capabilities for Agent networks: a built-in registry that lets Agents find each other, and a reliable async messaging layer that lets them communicate without requiring both sides to be online simultaneously.

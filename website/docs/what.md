@@ -6,11 +6,11 @@ outline: deep
 
 mq9 is a broker that provides Agent registration, discovery, and reliable asynchronous messaging — designed to scale to millions of agents.
 
-It is the fifth native protocol in [RobustMQ](https://github.com/robustmq/robustmq), sitting alongside MQTT, Kafka, NATS, and AMQP on a shared storage layer.
+## Why mq9 exists
+
+The vision behind mq9 is to make agent-to-agent communication **just work**. Every multi-agent system today encounters the same two foundational problems: how do agents find each other, and how do agents reliably communicate. Without standardized infrastructure, every team rebuilds the same plumbing. mq9 exists to solve these two problems well, so that developers can focus on agent logic rather than infrastructure.
 
 ## Two foundational problems
-
-Every multi-agent system hits the same two problems, regardless of framework or language:
 
 **Problem 1: Agents can't find each other.**
 
@@ -68,6 +68,26 @@ critical → urgent → normal
 
 Within a mailbox, higher-priority messages are returned first — FIFO within each tier. An agent coming back online after hours processes `critical` messages (emergency stops, abort signals) before normal task dispatches.
 
+## Positioning
+
+mq9 is not a general-purpose message queue. It is purpose-built for Agent communication, focusing on two things: making agents discoverable, and making messages reliably deliverable.
+
+| | **mq9** | **etcd + Kafka** | **NATS JetStream** | **Google A2A** |
+| --- | --- | --- | --- | --- |
+| Agent registry | Built-in, semantic + keyword search | etcd is a key-value store, no semantic search | No native registry | Agent discovery only, no messaging |
+| Async messaging | FETCH+ACK, offline delivery, priority | Kafka handles messaging; no native Agent registry | Streams + durable consumers; no Agent registry | No transport layer |
+| Priority delivery | Three-tier (critical / urgent / normal) | No native message priority | No native priority | N/A |
+| Offline delivery | Yes — store first, fetch on reconnect | Yes (Kafka) | Yes | No |
+| Setup | Single broker, one deploy | Two separate systems to operate | Single server, but no registry | Protocol only, no broker |
+| Agent lifecycle | TTL-based auto-expiry | Manual cleanup | Manual cleanup | N/A |
+
+**vs. A2A (Agent-to-Agent protocol)** — A2A defines how agents negotiate tasks at the application layer. mq9 handles reliable delivery and discovery at the transport layer. They are complementary — A2A workflows can run over mq9.
+
+**mq9 is not:**
+- A replacement for HTTP/gRPC between always-online services
+- A data pipeline or event log
+- An orchestration framework — it moves messages and enables discovery, not decisions
+
 ## Core concepts
 
 ### AgentCard
@@ -94,41 +114,49 @@ Pull consumption with offset tracking. `group_name` enables stateful consumption
 
 Messages are labeled `critical`, `urgent`, or `normal` via the `mq9-priority` header. FETCH returns them in priority order. Within a tier, delivery is FIFO.
 
-## Comparison
+## Key Capabilities
 
-| | **mq9** | **etcd + Kafka** | **NATS JetStream** | **Google A2A** |
-| --- | --- | --- | --- | --- |
-| Agent registry | Built-in, semantic + keyword search | etcd is a key-value store, no semantic search | No native registry | Agent discovery only, no messaging |
-| Async messaging | FETCH+ACK, offline delivery, priority | Kafka handles messaging; no native Agent registry | Streams + durable consumers; no Agent registry | No transport layer |
-| Priority delivery | Three-tier (critical / urgent / normal) | No native message priority | No native priority | N/A |
-| Offline delivery | Yes — store first, fetch on reconnect | Yes (Kafka) | Yes | No |
-| Setup | Single broker, one deploy | Two separate systems to operate | Single server, but no registry | Protocol only, no broker |
-| Agent lifecycle | TTL-based auto-expiry | Manual cleanup | Manual cleanup | N/A |
-
-**vs. raw NATS Core** — NATS Core is fire-and-forget pub/sub. mq9 adds persistent mailboxes, FETCH+ACK consumption, priority ordering, TTL lifecycle, and the Agent registry on top of NATS transport. Same wire protocol, completely different guarantees.
-
-**vs. A2A (Google's Agent2Agent)** — A2A defines how agents negotiate tasks at the application layer. mq9 handles reliable delivery and discovery at the transport layer. They are complementary — A2A workflows can run over mq9.
-
-**mq9 is not:**
-
-- A replacement for HTTP/gRPC between always-online services
-- A data pipeline or event log
-- An orchestration framework — it moves messages and enables discovery, not decisions
+| Capability | Details |
+| --- | --- |
+| Agent registration | Register with a capability description; full-text and semantic vector indexed |
+| Agent discovery | Full-text (`text`) or semantic (`semantic`) search |
+| Agent heartbeat | `AGENT.REPORT` keeps registry current |
+| Persistent mailboxes | Messages stored server-side until consumed; TTL-based auto-destruction |
+| Pull + ACK consumption | Stateful consumer groups with server-side offset tracking; resume-from-offset |
+| Three-tier priority | `critical` > `urgent` > `normal`; enforced by storage layer |
+| Key deduplication | `mq9-key`: only the latest message per key is retained |
+| Delayed delivery | `mq9-delay`: message becomes visible after N seconds |
+| Per-message TTL | `mq9-ttl`: message expires independently of mailbox TTL |
+| Tag filtering | `mq9-tags`: filter messages by comma-separated tags via QUERY |
+| N-to-N topologies | Shared mailboxes support fan-in, fan-out, and competing consumer patterns |
 
 ## Design principles
 
 **Registry and messaging are one system, not two.** The registry tells you where agents are. The mailbox ensures messages reach them. Splitting these into separate systems creates two integration surfaces, two failure modes, and two operational planes. mq9 unifies them.
 
-**No new concepts invented.** Request/reply reuses NATS native semantics. Offset tracking mirrors Kafka consumer groups. Message attributes are transmitted via NATS headers.
+**Pull over Push.** Agents control their own consumption rate. FETCH when ready, resume from the last ACK. No long-lived connections required.
 
-**mail_address is not tied to Agent identity.** One Agent can have different mailboxes for different tasks. TTL handles cleanup — no deregistration code, no lingering state.
+**Address is the permission boundary.** `mail_address` is the only credential needed — no tokens, no ACLs, no auth layer. Unguessability is the security model.
 
-**Single node is enough, scale when needed.** A single instance handles millions of concurrent agent connections. When higher availability is needed, switch to cluster mode — the API is unchanged.
+**Protocol-neutral transport.** Any NATS client is an mq9 client — Go, Python, Rust, JavaScript, Java. No proprietary SDK required.
 
-## Position in RobustMQ
+**Single node is enough, scale when needed.** A single instance handles millions of concurrent agent connections. Cluster mode is available when needed — the API is unchanged.
 
-mq9 is RobustMQ's fifth native protocol, sharing the same unified storage architecture as MQTT, Kafka, NATS, and AMQP. Deploy one RobustMQ instance — all capabilities are available. IoT devices send data over MQTT, analytics systems consume over Kafka, agents collaborate over mq9 — one broker, one storage layer, no bridging.
+## Protocol at a Glance
 
-NATS is only the **transport layer** — the wire protocol between client and broker. Storage, priority scheduling, TTL management, pull consumption offsets, and the Agent registry are all implemented by RobustMQ in Rust.
+All commands use NATS request/reply under `$mq9.AI.*`.
+
+| Category | Subject | Description |
+| --- | --- | --- |
+| Agent registry | `$mq9.AI.AGENT.REGISTER` | Register an Agent |
+| Agent registry | `$mq9.AI.AGENT.UNREGISTER` | Unregister an Agent |
+| Agent registry | `$mq9.AI.AGENT.REPORT` | Agent heartbeat / status |
+| Agent registry | `$mq9.AI.AGENT.DISCOVER` | Search Agents by keyword or semantic intent |
+| Mailbox | `$mq9.AI.MAILBOX.CREATE` | Create a mailbox with optional name and TTL |
+| Messaging | `$mq9.AI.MSG.SEND.{mail_address}` | Send a message |
+| Messaging | `$mq9.AI.MSG.FETCH.{mail_address}` | Pull messages |
+| Messaging | `$mq9.AI.MSG.ACK.{mail_address}` | Advance consumer group offset |
+| Messaging | `$mq9.AI.MSG.QUERY.{mail_address}` | Inspect mailbox without affecting offset |
+| Messaging | `$mq9.AI.MSG.DELETE.{mail_address}.{msg_id}` | Delete a specific message |
 
 *See [For Agent](/for-agent) for the protocol reference. See [For Engineer](/for-engineer) for integration code.*

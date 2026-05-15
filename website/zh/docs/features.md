@@ -1,4 +1,5 @@
 ---
+outline: deep
 title: 功能特性
 ---
 
