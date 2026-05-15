@@ -25,8 +25,8 @@ Add the dependency to `pom.xml`:
 Every agent is a peer — it can both send tasks to other agents and receive tasks from other agents. There is no "client" or "server" role.
 
 - Create a `Mq9A2AAgent` with only the broker address.
+- Register a handler with `onMessage()`, including consumer options.
 - Call `connect()` to connect to the broker.
-- Register a handler with `onMessage()`.
 - Call `createMailbox()` to create a mailbox and start the background consumer.
 - Call `register()` to publish agent identity to the registry so other agents can discover it.
 
@@ -38,50 +38,31 @@ Every agent is a peer — it can both send tasks to other agents and receive tas
 
 ```java
 import io.a2a.spec.*;
+import io.mq9.ConsumeOptions;
 import io.mq9.a2a.*;
 
 Mq9A2AAgent agentA = Mq9A2AAgent.builder().build();
 
 // A2A protocol event sequence: WORKING → Artifact → COMPLETED
 agentA.onMessage(
-    (A2AContext context, EventQueue queue) -> {
-        // A2A protocol: send WORKING first to tell the sender that processing has started
-        queue.enqueue(new TaskStatusUpdateEvent.Builder()
-                .taskId(context.taskId)
-                .contextId(context.contextId)
-                .status(new TaskStatus(TaskState.WORKING))
-                .isFinal(false)
-                .build()).join();
-
-        // A2A protocol: a Message contains one or more Parts; get the first TextPart
-        String text = "";
-        if (context.message != null && context.message.getParts() != null
-                && !context.message.getParts().isEmpty()) {
-            Object part = context.message.getParts().get(0);
-            if (part instanceof TextPart tp) text = tp.getText();
-        }
-        String result = myTranslate(text); // replace with your logic
-
-        // A2A protocol: push result as an Artifact — call multiple times for streaming
-        queue.enqueue(new TaskArtifactUpdateEvent.Builder()
-                .taskId(context.taskId)
-                .contextId(context.contextId)
-                .artifact(new Artifact.Builder()
-                        .name("translation")
-                        .parts(new TextPart(result))
-                        .build())
-                .lastChunk(true)
-                .build()).join();
-
-        // A2A protocol: send COMPLETED last to signal the task is done
-        return queue.enqueue(new TaskStatusUpdateEvent.Builder()
-                .taskId(context.taskId)
-                .contextId(context.contextId)
-                .status(new TaskStatus(TaskState.COMPLETED))
-                .isFinal(true)
-                .build());
-    },
-    "demo.agent.translator.workers", "earliest", 10, 500
+    (A2AContext ctx, EventQueue queue) ->
+        // A2A protocol: WORKING first — tells the sender processing has started
+        queue.working(ctx)
+            .thenCompose(v -> {
+                // A2A protocol: message body is one or more Parts; get the first text
+                String text = ctx.firstTextPart().orElse("");
+                String result = myTranslate(text); // replace with your logic
+                // A2A protocol: push result as Artifact — call multiple times for streaming
+                return queue.artifact(ctx, "translation", result);
+            })
+            // A2A protocol: COMPLETED last — signals the task is done
+            .thenCompose(v -> queue.completed(ctx)),
+    ConsumeOptions.builder()
+        .groupName("demo.agent.translator.workers")
+        .deliver("earliest")
+        .numMsgs(10)
+        .maxWaitMs(500)
+        .build()
 );
 
 agentA.connect().join();
@@ -94,6 +75,7 @@ System.out.println("mailbox: " + mailbox);
 
 ```java
 import io.a2a.spec.*;
+import io.mq9.ConsumeOptions;
 import io.mq9.a2a.*;
 import java.util.List;
 import java.util.Map;
@@ -101,20 +83,20 @@ import java.util.Map;
 Mq9A2AAgent agentB = Mq9A2AAgent.builder().build();
 
 // All messages arrive here — both reply events and new incoming tasks.
-// Use context.taskId to tell them apart: if it matches a task you sent, it's
-// a reply; otherwise it's a new task from another agent.
+// Use context.taskId to tell them apart: if it matches a task you sent,
+// it's a reply; otherwise it's a new task from another agent.
 agentB.onMessage(
-    (A2AContext context, EventQueue queue) -> {
-        System.out.println("received event task_id=" + context.taskId);
-        if (context.message != null && context.message.getParts() != null) {
-            for (Object part : context.message.getParts()) {
-                if (part instanceof TextPart tp)
-                    System.out.println("text: " + tp.getText());
-            }
-        }
-        return java.util.concurrent.CompletableFuture.completedFuture(null);
+    (A2AContext ctx, EventQueue queue) -> {
+        System.out.println("received event task_id=" + ctx.taskId);
+        ctx.firstTextPart().ifPresent(t -> System.out.println("text: " + t));
+        return CompletableFuture.completedFuture(null);
     },
-    "demo.agent.sender.workers", "earliest", 10, 500
+    ConsumeOptions.builder()
+        .groupName("demo.agent.sender.workers")
+        .deliver("earliest")
+        .numMsgs(10)
+        .maxWaitMs(500)
+        .build()
 );
 
 agentB.connect().join();
@@ -124,21 +106,20 @@ String bMailbox = agentB.createMailbox("demo.agent.sender", 300).join();
 List<Map<String, Object>> agents = agentB.discover("translation", false, 5).join();
 Map<String, Object> target = agents.get(0);
 
-// Build an A2A SendMessageRequest
+// Build A2A SendMessageRequest — message body is one or more Parts
 Message msg = new Message.Builder()
         .role(Message.Role.USER)
         .parts(new TextPart("你好，世界"))
         .build();
-SendMessageRequest request = new SendMessageRequest(null, new MessageSendParams(msg, null, null));
+SendMessageRequest request = new SendMessageRequest(
+        null, new MessageSendParams(msg, null, null));
 
 // sendMessage returns msg_id; task_id is generated by Agent A (the executor)
 // and arrives with reply events, readable as context.taskId in onMessage
 long msgId = agentB.sendMessage(target, request, bMailbox).join();
 System.out.println("sent, msg_id=" + msgId);
 
-// Wait for reply to arrive via onMessage
-Thread.sleep(10_000);
-
+Thread.sleep(10_000); // wait for reply to arrive via onMessage
 agentB.close();
 ```
 
@@ -171,25 +152,27 @@ Stops the consumer and disconnects from the broker. Call after all queued messag
 Registers a message handler with default consumer options:
 
 ```java
-agent.onMessage((context, queue) -> {
-    // A2A protocol: WORKING → Artifact → COMPLETED
-    return queue.enqueue(...);
-});
+agent.onMessage((ctx, queue) ->
+    queue.working(ctx)
+        .thenCompose(v -> queue.artifact(ctx, "result", myProcess(ctx)))
+        .thenCompose(v -> queue.completed(ctx))
+);
 ```
 
-### `onMessage(handler, groupName, deliver, numMsgs, maxWaitMs)`
+### `onMessage(handler, options)`
 
 Registers a message handler with explicit consumer options:
 
 ```java
-agent.onMessage(
-    (context, queue) -> { ... },
-    "my-group",   // consumer group name
-    "earliest",   // delivery start
-    10,           // messages per fetch batch
-    500           // fetch wait timeout, ms
-);
+agent.onMessage(handler, ConsumeOptions.builder()
+        .groupName("my-agent.workers")
+        .deliver("earliest")
+        .numMsgs(10)
+        .maxWaitMs(500)
+        .build());
 ```
+
+`ConsumeOptions` parameters:
 
 | Parameter | Description |
 | --- | --- |
@@ -241,56 +224,38 @@ Sends a message to another agent. Returns `CompletableFuture<Long>` (`msg_id`).
 | `request` | `SendMessageRequest` | The A2A message request |
 | `replyTo` | `String` | Your own mailbox address; `null` for one-way send |
 
-Returns the `msg_id` assigned by the broker, confirming the message was queued. The `task_id` is generated by the executing agent (the receiver) and arrives with reply events, readable as `context.taskId` in `onMessage`.
+Returns the `msg_id` assigned by the broker. The `task_id` is generated by the executing agent (the receiver) and arrives with reply events, readable as `context.taskId` in `onMessage`.
 
 ---
 
 ## Handler types
 
-The handler registered via `onMessage` receives native a2a-sdk objects:
+### `A2AContext`
 
-| Field | Type | Description |
+| Field / Method | Type | Description |
 | --- | --- | --- |
-| `context.taskId` | `String` | Task ID, generated by the executing agent |
-| `context.contextId` | `String` | Context / session ID |
-| `context.message` | `io.a2a.spec.Message` | The incoming A2A message |
-| `context.currentTask` | `io.a2a.spec.Task` | Existing task for multi-turn conversations; `null` for new tasks |
-| `queue` | `EventQueue` | Push response events here |
+| `ctx.taskId` | `String` | Task ID, generated by the executing agent |
+| `ctx.contextId` | `String` | Context / session ID |
+| `ctx.message` | `io.a2a.spec.Message` | The incoming A2A message |
+| `ctx.currentTask` | `io.a2a.spec.Task` | Existing task for multi-turn conversations; `null` for new tasks |
+| `ctx.firstTextPart()` | `Optional<String>` | Text of the first `TextPart` in the message — avoids null checks in every handler |
 
-Event types (all from `io.a2a.spec`):
+### `EventQueue`
 
-| Event | When to use |
+`EventQueue` provides helper methods so you don't need to construct Builder chains in every handler:
+
+| Method | Description |
 | --- | --- |
-| `TaskStatusUpdateEvent(WORKING)` | Signal that processing has started |
-| `TaskArtifactUpdateEvent` | Push result content; call multiple times for streaming |
-| `TaskStatusUpdateEvent(COMPLETED)` | Signal that the task completed successfully |
-| `TaskStatusUpdateEvent(FAILED)` | Signal that the task failed |
-| `TaskStatusUpdateEvent(CANCELED)` | Signal that the task was canceled |
+| `queue.working(ctx)` | Sends `TaskStatusUpdateEvent(WORKING)` |
+| `queue.artifact(ctx, name, text)` | Sends a `TaskArtifactUpdateEvent` with a single text part |
+| `queue.completed(ctx)` | Sends `TaskStatusUpdateEvent(COMPLETED)` as the final event |
+| `queue.failed(ctx)` | Sends `TaskStatusUpdateEvent(FAILED)` as the final event |
+| `queue.enqueue(event)` | Sends any A2A event (construct manually when needed) |
 
-Construction examples:
+Standard A2A protocol event sequence:
 
 ```java
-// WORKING
-new TaskStatusUpdateEvent.Builder()
-        .taskId(context.taskId)
-        .status(new TaskStatus(TaskState.WORKING))
-        .isFinal(false)
-        .build()
-
-// Artifact (text result)
-new TaskArtifactUpdateEvent.Builder()
-        .taskId(context.taskId)
-        .artifact(new Artifact.Builder()
-                .name("result")
-                .parts(new TextPart("output text"))
-                .build())
-        .lastChunk(true)
-        .build()
-
-// COMPLETED
-new TaskStatusUpdateEvent.Builder()
-        .taskId(context.taskId)
-        .status(new TaskStatus(TaskState.COMPLETED))
-        .isFinal(true)
-        .build()
+queue.working(ctx)
+    .thenCompose(v -> queue.artifact(ctx, "result", output))
+    .thenCompose(v -> queue.completed(ctx))
 ```

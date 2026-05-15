@@ -1,7 +1,12 @@
 package io.mq9.a2a;
 
 import io.a2a.spec.Message;
+import io.a2a.spec.Part;
 import io.a2a.spec.Task;
+import io.a2a.spec.TextPart;
+
+import java.util.List;
+import java.util.Optional;
 
 /**
  * Context passed to the {@link MessageHandler} for each incoming message.
@@ -32,5 +37,22 @@ public final class A2AContext {
         this.contextId = contextId;
         this.message = message;
         this.currentTask = currentTask;
+    }
+
+    /**
+     * Returns the text of the first {@link TextPart} in the message, or
+     * {@link Optional#empty()} if the message has no text parts.
+     *
+     * <p>Convenience method — avoids null/empty checks on {@code message.getParts()}
+     * in every handler.
+     */
+    public Optional<String> firstTextPart() {
+        if (message == null) return Optional.empty();
+        List<Part<?>> parts = message.getParts();
+        if (parts == null || parts.isEmpty()) return Optional.empty();
+        for (Part<?> part : parts) {
+            if (part instanceof TextPart tp) return Optional.of(tp.getText());
+        }
+        return Optional.empty();
     }
 }

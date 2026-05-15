@@ -63,11 +63,12 @@ public final class Mq9A2AAgent {
     private final String server;
     private final long   requestTimeoutMs;
 
-    // consumer options — set via onMessage(handler, ...)
+    // consumer options — set via onMessage(handler, options)
     private String  groupName;
     private String  deliver    = "earliest";
     private int     numMsgs    = 10;
     private int     maxWaitMs  = 500;
+    private ConsumeOptions consumeOptions; // non-null when set via onMessage(handler, ConsumeOptions)
 
     // ── runtime state ─────────────────────────────────────────────────────────
 
@@ -116,20 +117,19 @@ public final class Mq9A2AAgent {
     /**
      * Registers the message handler with explicit consumer options.
      *
-     * @param handler    processes each incoming A2A message
-     * @param groupName  consumer group name; {@code null} → auto "{mailbox}.workers"
-     * @param deliver    {@code "earliest"} or {@code "latest"}
-     * @param numMsgs    messages per fetch batch
-     * @param maxWaitMs  max wait per fetch when mailbox is empty
+     * <p>Example:
+     * <pre>{@code
+     * agent.onMessage(handler, ConsumeOptions.builder()
+     *         .groupName("my-agent.workers")
+     *         .deliver("earliest")
+     *         .numMsgs(10)
+     *         .maxWaitMs(500)
+     *         .build());
+     * }</pre>
      */
-    public void onMessage(MessageHandler handler,
-                          String groupName, String deliver,
-                          int numMsgs, int maxWaitMs) {
-        this.handler    = handler;
-        this.groupName  = groupName;
-        this.deliver    = deliver;
-        this.numMsgs    = numMsgs;
-        this.maxWaitMs  = maxWaitMs;
+    public void onMessage(MessageHandler handler, ConsumeOptions options) {
+        this.handler        = handler;
+        this.consumeOptions = options;
     }
 
     // ── lifecycle ─────────────────────────────────────────────────────────────
@@ -155,14 +155,19 @@ public final class Mq9A2AAgent {
             this.mailbox   = addr;
             this.agentName = name;
 
-            String group = (groupName != null) ? groupName : name + ".workers";
-            ConsumeOptions opts = ConsumeOptions.builder()
-                    .groupName(group)
-                    .deliver(deliver)
-                    .numMsgs(numMsgs)
-                    .maxWaitMs(maxWaitMs)
-                    .autoAck(true)
-                    .build();
+            ConsumeOptions opts;
+            if (consumeOptions != null) {
+                opts = consumeOptions;
+            } else {
+                String group = (groupName != null) ? groupName : name + ".workers";
+                opts = ConsumeOptions.builder()
+                        .groupName(group)
+                        .deliver(deliver)
+                        .numMsgs(numMsgs)
+                        .maxWaitMs(maxWaitMs)
+                        .autoAck(true)
+                        .build();
+            }
 
             return mq9.consume(mailbox, this::dispatch, opts)
                     .thenApply(c -> {

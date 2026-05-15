@@ -16,21 +16,18 @@
  *     mvn compile exec:java -Dexec.mainClass=A2ADemo
  */
 
-import io.a2a.spec.Artifact;
 import io.a2a.spec.Message;
 import io.a2a.spec.MessageSendParams;
 import io.a2a.spec.SendMessageRequest;
-import io.a2a.spec.TaskArtifactUpdateEvent;
-import io.a2a.spec.TaskState;
-import io.a2a.spec.TaskStatus;
-import io.a2a.spec.TaskStatusUpdateEvent;
 import io.a2a.spec.TextPart;
+import io.mq9.ConsumeOptions;
 import io.mq9.a2a.A2AContext;
 import io.mq9.a2a.EventQueue;
 import io.mq9.a2a.Mq9A2AAgent;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -44,63 +41,40 @@ public class A2ADemo {
     static void runAgent() throws Exception {
         Mq9A2AAgent agentA = Mq9A2AAgent.builder().server(SERVER).build();
 
-        // A2A protocol: handler receives tasks and streams back events in order:
-        //   WORKING → Artifact(s) → COMPLETED
+        // A2A protocol event sequence: WORKING → Artifact → COMPLETED
         agentA.onMessage(
-            (A2AContext context, EventQueue queue) -> {
-                // Step 1: signal processing has started
-                queue.enqueue(new TaskStatusUpdateEvent.Builder()
-                        .taskId(context.taskId)
-                        .contextId(context.contextId)
-                        .status(new TaskStatus(TaskState.WORKING))
-                        .isFinal(false)
-                        .build()).join();
-
-                // Step 2: extract text from message — A2A messages carry one or more Parts
-                String text = "";
-                if (context.message != null && context.message.getParts() != null
-                        && !context.message.getParts().isEmpty()) {
-                    Object part = context.message.getParts().get(0);
-                    if (part instanceof TextPart tp) text = tp.getText();
-                }
-                String translated = "[translated] " + text;
-                System.out.println("[agent-a] '" + text + "' → '" + translated + "'");
-
-                // Step 3: push result as Artifact — call multiple times for chunked streaming
-                queue.enqueue(new TaskArtifactUpdateEvent.Builder()
-                        .taskId(context.taskId)
-                        .contextId(context.contextId)
-                        .artifact(new Artifact.Builder()
-                                .name("translation")
-                                .parts(new TextPart(translated))
-                                .build())
-                        .lastChunk(true)
-                        .build()).join();
-
-                // Step 4: signal task is done
-                return queue.enqueue(new TaskStatusUpdateEvent.Builder()
-                        .taskId(context.taskId)
-                        .contextId(context.contextId)
-                        .status(new TaskStatus(TaskState.COMPLETED))
-                        .isFinal(true)
-                        .build());
-            },
-            "demo.java.translator.workers", "earliest", 10, 500
+            (A2AContext ctx, EventQueue queue) ->
+                // A2A protocol: WORKING first — tells the sender processing has started
+                queue.working(ctx)
+                    .thenCompose(v -> {
+                        // A2A protocol: message body is one or more Parts; get the first text
+                        String text = ctx.firstTextPart().orElse("");
+                        String translated = "[translated] " + text;
+                        System.out.println("[agent-a] '" + text + "' → '" + translated + "'");
+                        // A2A protocol: push result as Artifact — call multiple times for streaming
+                        return queue.artifact(ctx, "translation", translated);
+                    })
+                    // A2A protocol: COMPLETED last — signals the task is done
+                    .thenCompose(v -> queue.completed(ctx)),
+            ConsumeOptions.builder()
+                .groupName("demo.java.translator.workers")
+                .deliver("earliest")
+                .numMsgs(10)
+                .maxWaitMs(500)
+                .build()
         );
 
         agentA.connect().join();
         String mailbox = agentA.createMailbox("demo.java.translator", 0).join();
         System.out.println("[agent-a] mailbox=" + mailbox);
-
-        // agentRegister makes this agent discoverable via agentDiscover
-        // (omit AgentCard import — pass null to skip full card registration for the demo)
         System.out.println("[agent-a] running — waiting for tasks (Ctrl+C to stop)");
+
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             agentA.unregister().join();
             agentA.close();
             System.out.println("[agent-a] shut down");
         }));
-        Thread.currentThread().join(); // keep alive
+        Thread.currentThread().join();
     }
 
     // ── Agent B — sender + receiver ────────────────────────────────────────────
@@ -108,23 +82,24 @@ public class A2ADemo {
     static void runClient() throws Exception {
         Mq9A2AAgent agentB = Mq9A2AAgent.builder().server(SERVER).build();
 
-        // Agent B's @on_message receives reply events from Agent A.
-        // context.taskId identifies which task the event belongs to.
         CountDownLatch done = new CountDownLatch(1);
+
+        // All messages arrive here — both reply events and new incoming tasks.
+        // Use context.taskId to tell them apart: if it matches a task you sent,
+        // it's a reply; otherwise it's a new task from another agent.
         agentB.onMessage(
-            (A2AContext context, EventQueue queue) -> {
-                System.out.println("[agent-b] reply event  task_id=" + context.taskId);
-                if (context.message != null && context.message.getParts() != null) {
-                    for (Object part : context.message.getParts()) {
-                        if (part instanceof TextPart tp) {
-                            System.out.println("[agent-b] text part: " + tp.getText());
-                        }
-                    }
-                }
+            (A2AContext ctx, EventQueue queue) -> {
+                System.out.println("[agent-b] reply event  task_id=" + ctx.taskId);
+                ctx.firstTextPart().ifPresent(t -> System.out.println("[agent-b] text: " + t));
                 done.countDown();
-                return java.util.concurrent.CompletableFuture.completedFuture(null);
+                return CompletableFuture.completedFuture(null);
             },
-            "demo.java.sender.workers", "earliest", 10, 500
+            ConsumeOptions.builder()
+                .groupName("demo.java.sender.workers")
+                .deliver("earliest")
+                .numMsgs(10)
+                .maxWaitMs(500)
+                .build()
         );
 
         agentB.connect().join();
@@ -151,8 +126,8 @@ public class A2ADemo {
         SendMessageRequest request = new SendMessageRequest(
                 null, new MessageSendParams(msg, null, null));
 
-        // send_message returns msg_id; task_id is generated by Agent A (executor)
-        // and arrives in @on_message via context.taskId
+        // sendMessage returns msg_id; task_id is generated by Agent A (the executor)
+        // and arrives with reply events, readable as context.taskId in onMessage
         System.out.println("[agent-b] sending task…");
         long msgId = agentB.sendMessage(target, request, bMailbox).join();
         System.out.println("[agent-b] sent  msg_id=" + msgId);
@@ -168,41 +143,30 @@ public class A2ADemo {
     // ── Combined mode ──────────────────────────────────────────────────────────
 
     static void runBoth() throws Exception {
-        // Start Agent A in background thread
         Mq9A2AAgent agentA = Mq9A2AAgent.builder().server(SERVER).build();
-        agentA.onMessage(
-            (A2AContext context, EventQueue queue) -> {
-                String text = "";
-                if (context.message != null && context.message.getParts() != null
-                        && !context.message.getParts().isEmpty()) {
-                    Object part = context.message.getParts().get(0);
-                    if (part instanceof TextPart tp) text = tp.getText();
-                }
-                String translated = "[translated] " + text;
-                System.out.println("[agent-a] '" + text + "' → '" + translated + "'");
 
-                queue.enqueue(new TaskStatusUpdateEvent.Builder()
-                        .taskId(context.taskId).contextId(context.contextId)
-                        .status(new TaskStatus(TaskState.WORKING)).isFinal(false).build()).join();
-                queue.enqueue(new TaskArtifactUpdateEvent.Builder()
-                        .taskId(context.taskId).contextId(context.contextId)
-                        .artifact(new Artifact.Builder()
-                                .name("translation")
-                                .parts(new TextPart(translated)).build())
-                        .lastChunk(true).build()).join();
-                return queue.enqueue(new TaskStatusUpdateEvent.Builder()
-                        .taskId(context.taskId).contextId(context.contextId)
-                        .status(new TaskStatus(TaskState.COMPLETED)).isFinal(true).build());
-            },
-            "demo.java.translator.workers", "earliest", 10, 500
+        agentA.onMessage(
+            (A2AContext ctx, EventQueue queue) ->
+                queue.working(ctx)
+                    .thenCompose(v -> {
+                        String text = ctx.firstTextPart().orElse("");
+                        System.out.println("[agent-a] translating: '" + text + "'");
+                        return queue.artifact(ctx, "translation", "[translated] " + text);
+                    })
+                    .thenCompose(v -> queue.completed(ctx)),
+            ConsumeOptions.builder()
+                .groupName("demo.java.translator.workers")
+                .deliver("earliest")
+                .numMsgs(10)
+                .maxWaitMs(500)
+                .build()
         );
 
         agentA.connect().join();
         String aMailbox = agentA.createMailbox("demo.java.translator", 0).join();
         System.out.println("[agent-a] mailbox=" + aMailbox);
 
-        Thread.sleep(500); // give consumer a moment before Agent B sends
-
+        Thread.sleep(500);
         runClient();
 
         agentA.close();
