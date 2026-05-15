@@ -40,7 +40,7 @@ from a2a.types.a2a_pb2 import (
 )
 from mq9.a2a import Mq9A2AAgent
 
-agent = Mq9A2AAgent(server="nats://demo.robustmq.com:4222")
+agent = Mq9A2AAgent()  # defaults to public debug server
 
 @agent.on_message
 async def handle(context: RequestContext, event_queue: EventQueue) -> None:
@@ -77,7 +77,9 @@ card = AgentCard(
 
 async def main():
     await agent.connect()
-    await agent.register(card)   # blocks until stop() or Ctrl+C
+    mailbox = await agent.register(card)
+    print("mailbox:", mailbox)
+    await asyncio.Event().wait()  # keep running until Ctrl+C
 
 asyncio.run(main())
 ```
@@ -87,17 +89,13 @@ asyncio.run(main())
 ```python
 import asyncio
 from a2a.helpers import new_text_message
-from a2a.types.a2a_pb2 import (
-    AgentCard, Role, SendMessageRequest,
-    TaskArtifactUpdateEvent, TaskStatusUpdateEvent,
-)
+from a2a.types.a2a_pb2 import Role, SendMessageRequest
 from mq9.a2a import Mq9A2AAgent
 
 async def main():
-    agent = Mq9A2AAgent(server="nats://demo.robustmq.com:4222")
+    agent = Mq9A2AAgent()  # defaults to public debug server
     await agent.connect()
 
-    # Discover Agent A by natural-language description
     results = await agent.discover("translation agent")
     target = results[0]
 
@@ -105,71 +103,100 @@ async def main():
         message=new_text_message("你好，世界", role=Role.ROLE_USER)
     )
 
-    async for event in await agent.send_message(target, request, timeout=30):
-        if isinstance(event, TaskArtifactUpdateEvent):
-            print("Result:", event.artifact.parts[0].text)
-        elif isinstance(event, TaskStatusUpdateEvent):
-            print("Status:", event.status.state)
+    msg_id = await agent.send_message(target["mailbox"], request)
+    print("Sent, msg_id:", msg_id)
 
     await agent.close()
 
 asyncio.run(main())
 ```
 
-Agent B does not need to register — `connect()` alone is enough to discover and send. If Agent B also wants to receive tasks, it builds its own `AgentCard` and calls `register()`.
+Agent B does not need to register to send messages. However, to receive results back from the executing agent, it must first create its own mailbox and include the callback address in the message headers — otherwise communication is one-way. If Agent B also wants to act as an executor and receive tasks from others, it builds its own `AgentCard` and calls `register()`.
 
 ---
 
-## API reference
-
-### `Mq9A2AAgent`
-
-#### Constructor
+## Mq9A2AAgent
 
 ```python
-Mq9A2AAgent(*, server: str, mailbox_ttl: int = 0, request_timeout: float = 60)
+Mq9A2AAgent(*, server: str = "nats://demo.robustmq.com:4222", mailbox_ttl: int = 0, request_timeout: float = 60)
 ```
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `server` | `str` | mq9 broker NATS URL |
+| `server` | `str` | mq9 broker NATS URL. Defaults to the public debug server `nats://demo.robustmq.com:4222` — can be omitted during development |
 | `mailbox_ttl` | `int` | Mailbox TTL in seconds (`0` = permanent) |
 | `request_timeout` | `float` | Default timeout for outbound requests in seconds |
 
-#### Connection
+### `agent.connect`
 
-| Method | Description |
+Connect to the broker. Required before any operation.
+
+### `agent.close`
+
+Stop consuming messages and disconnect from the broker. Call this after the backlog is drained.
+
+### `@agent.on_message`
+
+Decorator — registers the async message handler:
+
+```python
+@agent.on_message
+async def handle(context: RequestContext, event_queue: EventQueue) -> None:
+    ...
+```
+
+### `agent.register`
+
+Publish agent identity, create a mailbox, and start the consumer in the background. **Returns immediately** with the mailbox address.
+
+Parameter: `agent_card` — `AgentCard` (from `a2a.types.a2a_pb2`). The `name` field is used as both the mailbox address and registry key.
+
+Returns `str` — the mailbox address other agents use to send tasks here.
+
+### `agent.unregister`
+
+Remove this agent from the registry. Other agents can no longer discover it. The connection and consumer stay active so queued messages can still be processed. Call `close()` when ready to fully stop.
+
+### `agent.discover`
+
+Find other agents in the registry by natural-language description.
+
+| Parameter | Description |
 | --- | --- |
-| `await agent.connect()` | Connect to the broker. Required before any operation. |
-| `await agent.close()` | Disconnect from the broker. |
-| `async with agent` | Context manager — calls `connect()` / `close()`. |
+| `query` | Natural-language query string; pass `None` to list all |
+| `semantic` | `True` (default) vector search; `False` keyword match |
+| `limit` | Max results to return, default `10` |
 
-#### Registration (receive tasks)
+Returns `list[dict]`, each entry containing `name`, `mailbox`, `agent_card`, and more.
 
-| Method | Description |
+### `agent.send_message`
+
+Send a message to another agent.
+
+| Parameter | Description |
 | --- | --- |
-| `@agent.on_message` | Decorator — registers async handler `(RequestContext, EventQueue) → None` |
-| `await agent.register(agent_card)` | Publish identity, create mailboxes, start receiving. Blocks until stopped. |
-| `await agent.stop()` | Gracefully unregister and disconnect. |
+| `mail_address` | Agent info dict from `discover()` (must have `mailbox`), or a raw mailbox address string |
+| `request` | `SendMessageRequest` (from `a2a.types.a2a_pb2`) |
 
-`register()` derives the agent name and mailbox address from `agent_card.name`. Two mailboxes are created automatically:
+Returns `int` — the `msg_id` assigned by the broker, confirming the message was queued.
 
-| Mailbox | Purpose |
-| --- | --- |
-| `{name}` | Main inbox — receives incoming tasks and control messages |
-| `{name}.tasks` | Task store — persists task state, survives restarts |
+### `agent.get_task`
 
-#### Discovery & outbound operations
+Get the current state of a task on another agent.
 
-The `agent` parameter in all methods below accepts either an agent info dict from `discover()` (must have a `mailbox` key) or a raw mailbox address string.
+Parameters: `mail_address`, `task_id: str`. Returns `Task | None`.
 
-| Method | Description |
-| --- | --- |
-| `await agent.discover(query, *, semantic, limit)` | Find agents by natural-language query. `semantic=True` (default) uses vector search; `False` uses keyword match. Pass `None` to list all. |
-| `await agent.send_message(agent, request, *, timeout)` | Send a task and stream back A2A events (`Task`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`). |
-| `await agent.get_task(agent, task_id)` | Get current state of a task by ID. Returns `Task \| None`. |
-| `await agent.list_tasks(agent, *, page_size)` | List all tasks stored by an agent. Returns `list[Task]`. |
-| `await agent.cancel_task(agent, task_id)` | Request task cancellation. Returns updated `Task \| None`. |
+### `agent.list_tasks`
+
+List all tasks stored by another agent.
+
+Parameters: `mail_address`, `page_size: int = 100`. Returns `list[Task]`.
+
+### `agent.cancel_task`
+
+Request cancellation of a running task on another agent.
+
+Parameters: `mail_address`, `task_id: str`. Returns updated `Task | None`.
 
 ---
 

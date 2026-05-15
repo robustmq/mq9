@@ -26,10 +26,10 @@ The broker holds the mailbox and registry — it doesn't care about the language
 
 | Step | What happens |
 | --- | --- |
-| ① Agent startup | Agent calls `MAILBOX.CREATE`, then `AGENT.REGISTER` with its `AgentCard` |
-| ② Client discover | Client calls `AGENT.DISCOVER` with a natural-language query; broker returns matching agents |
-| ③ Send task | Client sends `SendMessageRequest` to the agent's mailbox, with a callback mailbox in the `mq9-reply-to` header |
-| ④ Stream events | Agent processes the task and sends A2A events (`Task`, `working`, `artifact`, `completed`) back to the callback mailbox one by one; the last event carries `mq9-a2a-last: true` |
+| ① Agent A startup | Agent A calls `MAILBOX.CREATE`, then `AGENT.REGISTER` with its `AgentCard` |
+| ② Agent B discover | Agent B calls `AGENT.DISCOVER` with a natural-language query; broker returns matching agents |
+| ③ Send task | Agent B sends `SendMessageRequest` to Agent A's mailbox, with a callback mailbox in the `mq9-reply-to` header |
+| ④ Stream events | Agent A processes the task and sends A2A events (`Task`, `working`, `artifact`, `completed`) back to the callback mailbox one by one; the last event carries `mq9-a2a-last: true` |
 
 mq9 replaces the HTTP+SSE transport that A2A typically uses. Each streaming event is one mq9 message on the callback mailbox.
 

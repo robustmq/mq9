@@ -108,7 +108,15 @@ async def run_agent() -> None:
     agent = make_agent()
     print(f"[agent] starting — name={AGENT_CARD.name}  server={SERVER}")
     await agent.connect()
-    await agent.register(AGENT_CARD)
+    mailbox = await agent.register(AGENT_CARD)
+    print(f"[agent] registered — mailbox={mailbox}")
+    try:
+        await asyncio.Event().wait()  # keep running until Ctrl+C
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        pass
+    finally:
+        await agent.unregister()
+        await agent.close()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -116,48 +124,35 @@ async def run_agent() -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 
 async def run_client() -> None:
-    async with Mq9A2AAgent(server=SERVER) as client:
-        print("[client] discovering translation agents…")
-        agents = await client.discover("translation agent")
-        if not agents:
-            print("[client] no agents found — is the agent running?")
-            return
+    client = Mq9A2AAgent(server=SERVER)
+    await client.connect()
 
-        target = agents[0]
-        print(f"[client] found agent: name={target.get('name')}  mailbox={target.get('mailbox')}")
+    print("[client] discovering translation agents…")
+    agents = await client.discover("translation agent")
+    if not agents:
+        print("[client] no agents found — is the agent running?")
+        await client.close()
+        return
 
-        # ── 1. SendMessage (streaming) ─────────────────────────────────────────
-        request = SendMessageRequest(
-            message=new_text_message("你好，世界", role=Role.ROLE_USER)
-        )
+    target = agents[0]
+    print(f"[client] found agent: name={target.get('name')}  mailbox={target.get('mailbox')}")
 
-        print("\n[client] sending task…")
-        task_id = None
-        async for event in await client.send_message(target, request, timeout=15):
-            if isinstance(event, TaskArtifactUpdateEvent):
-                text = event.artifact.parts[0].text if event.artifact.parts else ""
-                print(f"[client] artifact: {text}")
-            elif isinstance(event, TaskStatusUpdateEvent):
-                state_name = TaskState.Name(event.status.state)
-                print(f"[client] status: {state_name}")
-                if hasattr(event, "task_id") and event.task_id:
-                    task_id = event.task_id
-            elif hasattr(event, "id"):
-                task_id = event.id
+    # ── 1. SendMessage ─────────────────────────────────────────────────────
+    request = SendMessageRequest(
+        message=new_text_message("你好，世界", role=Role.ROLE_USER)
+    )
 
-        # ── 2. GetTask ─────────────────────────────────────────────────────────
-        if task_id:
-            print(f"\n[client] GetTask task_id={task_id}")
-            task = await client.get_task(target, task_id)
-            if task:
-                print(f"[client] task state: {TaskState.Name(task.status.state)}")
+    print("\n[client] sending task…")
+    msg_id = await client.send_message(target["mailbox"], request)
+    print(f"[client] sent, msg_id={msg_id}")
 
-        # ── 3. ListTasks ───────────────────────────────────────────────────────
-        print("\n[client] ListTasks…")
-        tasks = await client.list_tasks(target)
-        print(f"[client] total tasks stored: {len(tasks)}")
+    # ── 3. ListTasks ───────────────────────────────────────────────────────
+    print("\n[client] ListTasks…")
+    tasks = await client.list_tasks(target["mailbox"])
+    print(f"[client] total tasks stored: {len(tasks)}")
 
-        print("\n[client] done.")
+    print("\n[client] done.")
+    await client.close()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -166,23 +161,16 @@ async def run_client() -> None:
 
 async def run_both() -> None:
     agent = make_agent()
-    agent_task = asyncio.create_task(_run_agent_bg(agent))
+    await agent.connect()
+    mailbox = await agent.register(AGENT_CARD)
+    print(f"[agent] registered — mailbox={mailbox}")
 
-    await asyncio.sleep(2)
+    await asyncio.sleep(1)
 
     await run_client()
 
-    await agent.stop()
-    agent_task.cancel()
-    try:
-        await agent_task
-    except (asyncio.CancelledError, Exception):
-        pass
-
-
-async def _run_agent_bg(agent: Mq9A2AAgent) -> None:
-    await agent.connect()
-    await agent.register(AGENT_CARD)
+    await agent.unregister()
+    await agent.close()
 
 
 # ──────────────────────────────────────────────────────────────────────────────

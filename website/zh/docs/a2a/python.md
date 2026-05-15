@@ -40,7 +40,7 @@ from a2a.types.a2a_pb2 import (
 )
 from mq9.a2a import Mq9A2AAgent
 
-agent = Mq9A2AAgent(server="nats://demo.robustmq.com:4222")
+agent = Mq9A2AAgent()  # 默认连接公共调试服务
 
 @agent.on_message
 async def handle(context: RequestContext, event_queue: EventQueue) -> None:
@@ -77,7 +77,9 @@ card = AgentCard(
 
 async def main():
     await agent.connect()
-    await agent.register(card)   # 阻塞直到 stop() 或 Ctrl+C
+    mailbox = await agent.register(card)
+    print("mailbox:", mailbox)
+    await asyncio.Event().wait()  # 保持运行，直到 Ctrl+C
 
 asyncio.run(main())
 ```
@@ -87,17 +89,13 @@ asyncio.run(main())
 ```python
 import asyncio
 from a2a.helpers import new_text_message
-from a2a.types.a2a_pb2 import (
-    AgentCard, Role, SendMessageRequest,
-    TaskArtifactUpdateEvent, TaskStatusUpdateEvent,
-)
+from a2a.types.a2a_pb2 import Role, SendMessageRequest
 from mq9.a2a import Mq9A2AAgent
 
 async def main():
-    agent = Mq9A2AAgent(server="nats://demo.robustmq.com:4222")
+    agent = Mq9A2AAgent()  # 默认连接公共调试服务
     await agent.connect()
 
-    # 按自然语言描述发现 Agent A
     results = await agent.discover("翻译 agent")
     target = results[0]
 
@@ -105,71 +103,100 @@ async def main():
         message=new_text_message("你好，世界", role=Role.ROLE_USER)
     )
 
-    async for event in await agent.send_message(target, request, timeout=30):
-        if isinstance(event, TaskArtifactUpdateEvent):
-            print("结果：", event.artifact.parts[0].text)
-        elif isinstance(event, TaskStatusUpdateEvent):
-            print("状态：", event.status.state)
+    msg_id = await agent.send_message(target["mailbox"], request)
+    print("已发送，msg_id:", msg_id)
 
     await agent.close()
 
 asyncio.run(main())
 ```
 
-Agent B 不需要注册——只需 `connect()` 即可发现和发送任务。如果 Agent B 也想接收任务，同样构建自己的 `AgentCard` 并调用 `register()` 即可。
+Agent B 不需要注册即可发送消息。但如果需要接收执行者的处理结果，必须先创建自己的 mailbox，并在发送时通过消息头带上回调地址，否则只能单向发送。如果 Agent B 同时也需要作为执行者接收任务，则构建自己的 `AgentCard` 并调用 `register()` 即可。
 
 ---
 
-## API 参考
-
-### `Mq9A2AAgent`
-
-#### 构造函数
+## Mq9A2AAgent
 
 ```python
-Mq9A2AAgent(*, server: str, mailbox_ttl: int = 0, request_timeout: float = 60)
+Mq9A2AAgent(*, server: str = "nats://demo.robustmq.com:4222", mailbox_ttl: int = 0, request_timeout: float = 60)
 ```
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
-| `server` | `str` | mq9 broker 的 NATS 地址 |
+| `server` | `str` | mq9 broker 的 NATS 地址。默认连接公共调试服务 `nats://demo.robustmq.com:4222`，可不填 |
 | `mailbox_ttl` | `int` | Mailbox 存活时间，秒（`0` 表示永久） |
 | `request_timeout` | `float` | 对外发送请求的默认超时时间，秒 |
 
-#### 连接
+### `agent.connect`
 
-| 方法 | 说明 |
+连接 broker，所有操作前必须先调用。
+
+### `agent.close`
+
+停止消费消息并断开 broker 连接。积压消息处理完毕后调用。
+
+### `@agent.on_message`
+
+装饰器，注册消息处理函数：
+
+```python
+@agent.on_message
+async def handle(context: RequestContext, event_queue: EventQueue) -> None:
+    ...
+```
+
+### `agent.register`
+
+发布 Agent 身份、创建 mailbox、在后台启动消费者，**立即返回** mailbox 地址字符串。
+
+参数：`agent_card` — `AgentCard`（来自 `a2a.types.a2a_pb2`），`name` 字段同时作为 mailbox 地址和注册中心的 key。
+
+返回值：`str`，mailbox 地址，其他 Agent 通过该地址向你发送任务。
+
+### `agent.unregister`
+
+从注册中心注销，其他 Agent 将无法再发现此 Agent。连接和消费者保持运行，积压消息仍可继续处理。处理完毕后调用 `close()` 彻底停止。
+
+### `agent.discover`
+
+按自然语言描述在注册中心发现其他 Agent。
+
+| 参数 | 说明 |
 | --- | --- |
-| `await agent.connect()` | 连接 broker，所有操作前必须先调用 |
-| `await agent.close()` | 断开连接 |
-| `async with agent` | 上下文管理器，自动 `connect()` / `close()` |
+| `query` | 自然语言查询字符串；传 `None` 列出全部 |
+| `semantic` | `True`（默认）向量语义搜索；`False` 关键词匹配 |
+| `limit` | 返回结果数上限，默认 `10` |
 
-#### 注册（接收任务）
+返回 `list[dict]`，每项包含 `name`、`mailbox`、`agent_card` 等字段。
 
-| 方法 | 说明 |
+### `agent.send_message`
+
+向另一个 Agent 发送消息。
+
+| 参数 | 说明 |
 | --- | --- |
-| `@agent.on_message` | 装饰器，注册处理函数 `(RequestContext, EventQueue) → None` |
-| `await agent.register(agent_card)` | 发布身份、创建 mailbox、开始接收任务，阻塞直到停止 |
-| `await agent.stop()` | 优雅注销并断开连接 |
+| `mail_address` | `discover()` 返回的 Agent 信息字典（需含 `mailbox`），或直接传 mailbox 地址字符串 |
+| `request` | `SendMessageRequest`（来自 `a2a.types.a2a_pb2`） |
 
-`register()` 从 `agent_card.name` 获取 Agent 名称和 mailbox 地址，并自动创建两个 mailbox：
+返回 `int`，broker 分配的 `msg_id`，表示消息已成功入队。
 
-| Mailbox | 用途 |
-| --- | --- |
-| `{name}` | 主收件箱，接收传入的任务和控制消息 |
-| `{name}.tasks` | 任务存储，持久化任务状态，重启后恢复 |
+### `agent.get_task`
 
-#### 发现与对外操作
+查询另一个 Agent 上指定任务的当前状态。
 
-以下所有方法均需先调用 `connect()`。`agent` 参数接受 `discover()` 返回的 Agent 信息字典（需含 `mailbox` 字段）或原始 mailbox 地址字符串。
+参数：`mail_address`、`task_id: str`。返回 `Task | None`。
 
-| 方法 | 说明 |
-| --- | --- |
-| `await agent.discover(query, *, semantic, limit)` | 按自然语言描述发现 Agent。`semantic=True`（默认）语义搜索；`False` 关键词匹配；`None` 列出全部。 |
-| `await agent.send_message(agent, request, *, timeout)` | 发送任务，返回异步迭代器流式输出 A2A 事件（`Task`、`TaskStatusUpdateEvent`、`TaskArtifactUpdateEvent`）。 |
-| `await agent.get_task(agent, task_id)` | 按 ID 查询任务当前状态，返回 `Task \| None`。 |
-| `await agent.list_tasks(agent, *, page_size)` | 列出某 Agent 的所有任务，返回 `list[Task]`。 |
-| `await agent.cancel_task(agent, task_id)` | 请求取消正在运行的任务，返回更新后的 `Task \| None`。 |
+### `agent.list_tasks`
+
+列出另一个 Agent 存储的所有任务。
+
+参数：`mail_address`、`page_size: int = 100`。返回 `list[Task]`。
+
+### `agent.cancel_task`
+
+请求取消另一个 Agent 上正在运行的任务。
+
+参数：`mail_address`、`task_id: str`。返回更新后的 `Task | None`。
 
 ---
 
