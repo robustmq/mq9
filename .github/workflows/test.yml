@@ -26,6 +26,23 @@ jobs:
         working-directory: python
         run: pytest -q
 
+  test-langchain-mq9:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install mq9 SDK
+        working-directory: python
+        run: pip install -e .
+      - name: Install langchain-mq9 dependencies
+        working-directory: langchain-mq9
+        run: pip install -e ".[dev]"
+      - name: Run tests
+        working-directory: langchain-mq9
+        run: pytest -q
+
   test-javascript:
     runs-on: ubuntu-22.04
     steps:

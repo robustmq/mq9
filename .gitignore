@@ -1,6 +1,6 @@
 # website
 node_modules/
-package-lock.json
+/package-lock.json
 website/.vitepress/dist/
 website/.vitepress/cache/
 

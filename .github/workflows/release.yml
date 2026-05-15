@@ -33,25 +33,31 @@ jobs:
           echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
           echo "Releasing ${VERSION}"
 
-      - name: Verify all SDK manifests match VERSION
+      - name: Sync version to all SDK manifests
         run: |
           VERSION=$(cat VERSION | tr -d '[:space:]')
-          FAIL=0
-          check() {
-            local lang=$1 file=$2 pattern=$3
-            if ! grep -q "${pattern}" "${file}"; then
-              echo "ERROR: ${lang} version in ${file} does not match VERSION (${VERSION})"
-              FAIL=1
-            else
-              echo "OK: ${lang} == ${VERSION}"
-            fi
-          }
-          check "Python"     "python/pyproject.toml"     "version = \"${VERSION}\""
-          check "JavaScript" "javascript/package.json"   "\"version\": \"${VERSION}\""
-          check "Rust"       "rust/Cargo.toml"           "version = \"${VERSION}\""
-          check "Java"       "java/pom.xml"              "<version>${VERSION}</version>"
-          # Go uses git tags for versioning, no manifest version to check
-          [ $FAIL -eq 0 ] || exit 1
+          echo "Syncing version ${VERSION} to all SDK manifests"
+
+          # Python
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" python/pyproject.toml
+
+          # langchain-mq9
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" langchain-mq9/pyproject.toml
+
+          # JavaScript
+          sed -i "s/\"version\": \".*\"/\"version\": \"${VERSION}\"/" javascript/package.json
+
+          # Rust
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" rust/Cargo.toml
+
+          # Java (only the first <version> tag, which is the project version)
+          sed -i "0,/<version>.*<\/version>/s/<version>.*<\/version>/<version>${VERSION}<\/version>/" java/pom.xml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add python/pyproject.toml langchain-mq9/pyproject.toml javascript/package.json rust/Cargo.toml java/pom.xml
+          git diff --cached --quiet || git commit -m "chore: sync SDK versions to ${VERSION}"
+          git push
 
       - name: Create and push git tag
         env:
@@ -78,6 +84,28 @@ jobs:
           token: ${{ secrets.RELEASE_TOKEN }}
 
   # ── Step 2: publish all SDKs in parallel ───────────────────────────────────
+
+  release-langchain-mq9:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: pip install build twine
+      - name: Build
+        working-directory: langchain-mq9
+        run: python -m build
+      - name: Publish to PyPI
+        working-directory: langchain-mq9
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: twine upload dist/*
 
   release-python:
     needs: prepare
@@ -188,7 +216,7 @@ jobs:
 
   # ── Step 3: summary ─────────────────────────────────────────────────────────
   summary:
-    needs: [prepare, release-python, release-javascript, release-go, release-rust, release-java]
+    needs: [prepare, release-langchain-mq9, release-python, release-javascript, release-go, release-rust, release-java]
     runs-on: ubuntu-22.04
     if: always()
     steps:
@@ -200,6 +228,7 @@ jobs:
 
           | SDK | Registry | Status |
           |-----|----------|--------|
+          | langchain-mq9 | PyPI | ${{ needs.release-langchain-mq9.result }} |
           | Python | PyPI | ${{ needs.release-python.result }} |
           | JavaScript | npm | ${{ needs.release-javascript.result }} |
           | Go | pkg.go.dev | ${{ needs.release-go.result }} |

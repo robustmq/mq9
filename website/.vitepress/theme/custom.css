@@ -1,5 +1,8 @@
 /* ─── Brand tokens ────────────────────────────────────────────── */
 :root {
+  --vp-nav-bg-color: rgba(255, 255, 255, 0.92);
+  --vp-local-nav-bg-color: rgba(255, 255, 255, 0.92);
+  --vp-sidebar-bg-color: #ffffff;
   --vp-c-brand-1: #0f172a;
   --vp-c-brand-2: #1e293b;
   --vp-c-brand-3: #334155;
@@ -33,21 +36,16 @@
   backdrop-filter: blur(12px) !important;
 }
 
-.VPNavBar .title {
-  font-weight: 700;
-  font-size: 1.2rem;
-  letter-spacing: -0.02em;
-  color: #ffffff !important;
-  background: #000000;
-  border-radius: 6px;
-  padding: 0.2rem 0.6rem;
-  font-family: Georgia, 'Times New Roman', serif;
+
+.VPNavBarTitle .logo {
+  height: 84px;
+  width: auto;
 }
 
-.VPNavBar .title:hover {
-  color: #ffffff !important;
+.VPNavBarTitle .title:hover {
   opacity: 0.8;
 }
+
 
 .VPNavBarMenu .VPNavBarMenuLink {
   font-size: 0.875rem;
@@ -108,6 +106,7 @@ div[class*='language-'] {
 
 div[class*='language-'] code {
   font-size: 0.82rem;
+  color: #e5e5e5 !important;
 }
 
 /* Inline code */
@@ -150,16 +149,62 @@ div[class*='language-'] code {
 .VPFlyout .menu,
 .VPFlyout .panel,
 .VPNavBarMenuGroup .panel,
-.VPNavBarMenuGroup .menu {
+.VPNavBarMenuGroup .menu,
+.VPMenu,
+.VPFlyout > .menu,
+.VPNavBarMenuGroup > .menu {
   background: #ffffff !important;
   border: 1px solid var(--vp-c-divider) !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+}
+
+.VPMenu .item .VPMenuLink,
+.VPMenu .item .link,
+.VPFlyout .VPMenuLink,
+.VPFlyout .link {
+  color: var(--vp-c-text-1) !important;
+}
+
+.VPMenu .item .VPMenuLink:hover,
+.VPMenu .item .link:hover,
+.VPFlyout .VPMenuLink:hover,
+.VPFlyout .link:hover {
+  background: var(--vp-c-bg-soft) !important;
+  color: var(--vp-c-text-1) !important;
+}
+
+/* ─── Sidebar top padding ─────────────────────────────────────── */
+.VPSidebarItem.level-0:first-child {
+  padding-top: 24px !important;
 }
 
 /* ─── Sidebar ─────────────────────────────────────────────────── */
 .VPSidebar {
   background: #ffffff !important;
   border-right: 1px solid var(--vp-c-divider) !important;
+}
+
+.VPSidebarItem .item .link.is-active,
+.VPSidebarItem .item .link.is-active:hover {
+  color: #000000 !important;
+  font-weight: 600 !important;
+}
+
+.VPSidebarItem .item .link.is-active .text {
+  color: #000000 !important;
+  font-weight: 600 !important;
+}
+
+.VPSidebarItem.is-active > .item > .link,
+.VPSidebarItem.is-active > .item > .link:hover {
+  background: #f0f0f0 !important;
+  border-radius: 6px !important;
+  color: #000000 !important;
+  font-weight: 600 !important;
+}
+
+.VPSidebarItem.level-1.is-active > .item > .indicator {
+  background: #000000 !important;
 }
 
 /* ─── Footer ──────────────────────────────────────────────────── */
