@@ -35,7 +35,8 @@ export default defineConfig({
         nav: [
           { text: 'Home', link: '/' },
           { text: 'Docs', link: '/docs/overview' },
-          { text: 'GitHub', link: 'https://github.com/robustmq/robustmq' },
+          { text: 'GitHub', link: 'https://github.com/robustmq/mq9' },
+          { text: 'RobustMQ', link: 'https://github.com/robustmq/robustmq' },
         ],
         sidebar: {
           '/sdk/': [
@@ -96,7 +97,8 @@ export default defineConfig({
         nav: [
           { text: '首页', link: '/zh/' },
           { text: '文档', link: '/zh/docs/' },
-          { text: 'GitHub', link: 'https://github.com/robustmq/robustmq' },
+          { text: 'GitHub', link: 'https://github.com/robustmq/mq9' },
+          { text: 'RobustMQ', link: 'https://github.com/robustmq/robustmq' },
         ],
         sidebar: {
           '/zh/sdk/': [
@@ -156,7 +158,7 @@ export default defineConfig({
     logo: '/logo.jpg',
     aside: false,
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/robustmq/robustmq' },
+      { icon: 'github', link: 'https://github.com/robustmq/mq9' },
     ],
   },
 
