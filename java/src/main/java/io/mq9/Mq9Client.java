@@ -144,9 +144,22 @@ public final class Mq9Client implements AutoCloseable {
      * @return the assigned {@code msg_id}; {@code -1} for delayed messages
      */
     public CompletableFuture<Long> send(String mailAddress, byte[] payload, SendOptions options) {
+        return send(mailAddress, payload, options, null);
+    }
+
+    /**
+     * Sends a message with additional protocol headers (e.g. A2A headers).
+     *
+     * @param extraHeaders additional NATS headers; merged with {@code options}-derived headers
+     */
+    public CompletableFuture<Long> send(String mailAddress, byte[] payload, SendOptions options,
+                                        Map<String, String> extraHeaders) {
         return CompletableFuture.supplyAsync(() -> {
             String subject = PREFIX + ".MSG.SEND." + mailAddress;
             Headers headers = buildSendHeaders(options);
+            if (extraHeaders != null) {
+                extraHeaders.forEach(headers::add);
+            }
 
             io.nats.client.Message natsResp = requestWithHeaders(subject, headers, payload);
 

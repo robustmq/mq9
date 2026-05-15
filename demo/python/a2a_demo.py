@@ -167,14 +167,14 @@ async def run_client() -> None:
         message=new_text_message("你好，世界", role=Role.ROLE_USER)
     )
     print("\n[agent-b] sending task…")
-    # send_message returns (msg_id, task_id) when reply_to is set.
-    # Hold onto task_id — reply events arrive in @on_message with context.task_id set.
-    msg_id, task_id = await agent_b.send_message(
+    # send_message returns msg_id confirming the message was queued.
+    # Agent A generates the task_id; it arrives in @on_message via context.task_id.
+    msg_id = await agent_b.send_message(
         target["mailbox"],
         request,
         reply_to=b_mailbox,
     )
-    print(f"[agent-b] sent, msg_id={msg_id}, task_id={task_id}")
+    print(f"[agent-b] sent, msg_id={msg_id}")
 
     # Give Agent A time to process and deliver the reply via @on_message.
     print("[agent-b] waiting for result…")

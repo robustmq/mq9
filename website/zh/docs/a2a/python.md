@@ -128,10 +128,10 @@ async def main():
         message=new_text_message("你好，世界", role=Role.ROLE_USER)
     )
 
-    # 带 reply_to 时返回 (msg_id, task_id)
-    # 框架把 task_id 透传到每条回包的 context.task_id，业务自己处理
-    msg_id, task_id = await agent_b.send_message(target["mailbox"], request, reply_to=b_mailbox)
-    print(f"已发送，msg_id={msg_id}，task_id={task_id}")
+    # send_message 返回 msg_id，表示消息已成功入队
+    # task_id 由 Agent A 生成，随回包事件到达，从 context.task_id 读取
+    msg_id = await agent_b.send_message(target["mailbox"], request, reply_to=b_mailbox)
+    print(f"已发送，msg_id={msg_id}")
 
     # 等待结果通过 @on_message 到达
     await asyncio.sleep(10)
@@ -233,8 +233,7 @@ async def handle(context: RequestContext, event_queue: EventQueue) -> None:
 | `request` | `SendMessageRequest`（来自 `a2a.types.a2a_pb2`） |
 | `reply_to` | 自己的 mailbox 地址。设置后框架自动生成 `task_id`，每条回包的 `context.task_id` 都会带上该值，业务层用它区分不同任务的回包 |
 
-- 不带 `reply_to`：返回 `int`，即 broker 分配的 `msg_id`
-- 带 `reply_to`：返回 `(msg_id, task_id)`，`task_id` 由框架生成
+返回 `int`，broker 分配的 `msg_id`，表示消息已成功入队。`task_id` 由执行方（接收任务的 Agent）生成，随回包事件到达，从 `context.task_id` 读取。
 
 ### `agent.get_task`
 

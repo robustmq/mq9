@@ -83,6 +83,7 @@ export default defineConfig({
                   items: [
                     { text: 'Overview', link: '/docs/a2a' },
                     { text: 'Python', link: '/docs/a2a/python' },
+                    { text: 'Java', link: '/docs/a2a/java' },
                   ],
                 },
               ],
@@ -154,6 +155,7 @@ export default defineConfig({
                   items: [
                     { text: '概述', link: '/zh/docs/a2a' },
                     { text: 'Python', link: '/zh/docs/a2a/python' },
+                    { text: 'Java', link: '/zh/docs/a2a/java' },
                   ],
                 },
               ],
