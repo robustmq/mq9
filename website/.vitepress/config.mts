@@ -70,6 +70,7 @@ export default defineConfig({
                 { text: 'Go', link: '/docs/sdk/go' },
                 { text: 'Rust', link: '/docs/sdk/rust' },
                 { text: 'Java', link: '/docs/sdk/java' },
+                { text: 'C#', link: '/docs/sdk/csharp' },
               ],
             },
             {
@@ -133,6 +134,7 @@ export default defineConfig({
                 { text: 'Go', link: '/zh/docs/sdk/go' },
                 { text: 'Rust', link: '/zh/docs/sdk/rust' },
                 { text: 'Java', link: '/zh/docs/sdk/java' },
+                { text: 'C#', link: '/zh/docs/sdk/csharp' },
               ],
             },
             {
