@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Mq9</RootNamespace>
+    <AssemblyName>Mq9</AssemblyName>
+    <PackageId>mq9</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>mq9</Authors>
+    <Description>mq9 C# SDK — Agent registration, discovery, and reliable async messaging.</Description>
+    <PackageTags>mq9;agent;messaging;nats;ai</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NATS.Net" Version="2.*" />
+  </ItemGroup>
+
+</Project>

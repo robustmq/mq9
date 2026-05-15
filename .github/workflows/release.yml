@@ -53,9 +53,12 @@ jobs:
           # Java (only the first <version> tag, which is the project version)
           sed -i "0,/<version>.*<\/version>/s/<version>.*<\/version>/<version>${VERSION}<\/version>/" java/pom.xml
 
+          # C#
+          sed -i "s|<Version>.*</Version>|<Version>${VERSION}</Version>|" csharp/Mq9/Mq9.csproj
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add python/pyproject.toml langchain-mq9/pyproject.toml javascript/package.json rust/Cargo.toml java/pom.xml
+          git add python/pyproject.toml langchain-mq9/pyproject.toml javascript/package.json rust/Cargo.toml java/pom.xml csharp/Mq9/Mq9.csproj
           git diff --cached --quiet || git commit -m "chore: sync SDK versions to ${VERSION}"
           git push
 
@@ -214,9 +217,28 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: mvn --no-transfer-progress deploy -P release
 
+  release-csharp:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0"
+      - name: Build and pack
+        working-directory: csharp/Mq9
+        run: dotnet pack -c Release -o nupkg
+      - name: Publish to NuGet
+        working-directory: csharp/Mq9
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: dotnet nuget push nupkg/*.nupkg --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
+
   # ── Step 3: summary ─────────────────────────────────────────────────────────
   summary:
-    needs: [prepare, release-langchain-mq9, release-python, release-javascript, release-go, release-rust, release-java]
+    needs: [prepare, release-langchain-mq9, release-python, release-javascript, release-go, release-rust, release-java, release-csharp]
     runs-on: ubuntu-22.04
     if: always()
     steps:
@@ -234,6 +256,7 @@ jobs:
           | Go | pkg.go.dev | ${{ needs.release-go.result }} |
           | Rust | crates.io | ${{ needs.release-rust.result }} |
           | Java | Maven Central | ${{ needs.release-java.result }} |
+          | C# | NuGet | ${{ needs.release-csharp.result }} |
 
           GitHub Release: https://github.com/${{ github.repository }}/releases/tag/v${VERSION}
           EOF
