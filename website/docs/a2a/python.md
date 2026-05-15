@@ -31,7 +31,7 @@ Every agent is equal — each one can send tasks to others and receive tasks fro
 
 ```python
 import asyncio
-from a2a.helpers import new_task_from_user_message, new_text_artifact, new_text_message
+from a2a.helpers import new_text_artifact, new_text_message
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
 from a2a.types.a2a_pb2 import (
@@ -42,31 +42,29 @@ from mq9.a2a import Mq9A2AAgent
 
 agent = Mq9A2AAgent()  # defaults to public debug server
 
-@agent.on_message
+@agent.on_message(group_name="demo.agent.translator.workers", deliver="earliest", num_msgs=10, max_wait_ms=500)
 async def handle(context: RequestContext, event_queue: EventQueue) -> None:
-    # Resume an existing task (multi-turn), or create a new one from this message.
-    task = context.current_task or new_task_from_user_message(context.message)
-    # First event must be the Task object — creates the task record on the sender's side.
-    await event_queue.enqueue_event(task)
+    # The following follows the A2A protocol's standard event sequence: WORKING → Artifact → COMPLETED
 
-    # Tell the sender processing has started.
+    # A2A protocol: send WORKING first to tell the sender processing has started.
     await event_queue.enqueue_event(TaskStatusUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
         status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
     ))
 
-    # Extract the first text part from the message.
+    # A2A protocol: a Message consists of one or more Parts (text / data / file).
+    # Extract the text content from the first Part.
     text = context.message.parts[0].text if context.message.parts else ""
     result = my_translate(text)  # your logic here
 
-    # Push the result; call multiple times to stream partial output.
+    # A2A protocol: push result as an Artifact — call multiple times for streaming.
     await event_queue.enqueue_event(TaskArtifactUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
         artifact=new_text_artifact(name="translation", text=result),
     ))
-    # Signal task is done — the sender's stream ends here.
+    # A2A protocol: send COMPLETED last to signal the task is done.
     await event_queue.enqueue_event(TaskStatusUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
@@ -103,11 +101,14 @@ from mq9.a2a import Mq9A2AAgent
 
 agent_b = Mq9A2AAgent()  # defaults to public debug server
 
-# Register a handler to receive results sent back by Agent A.
-@agent_b.on_message
-async def on_result(context: RequestContext, _) -> None:
+# All messages arrive here — both reply events and new incoming tasks.
+# Use context.task_id to tell them apart: match it against a task_id you sent
+# to identify a reply; anything else is a new incoming task.
+@agent_b.on_message(group_name="demo.agent.sender.workers", deliver="earliest", num_msgs=10, max_wait_ms=500)
+async def handle_incoming(context: RequestContext, _: EventQueue) -> None:
     text = context.message.parts[0].text if context.message.parts else ""
-    print("Result:", text)
+    print(f"Message received task_id={context.task_id}: {text}")
+    # Business logic holds the task_id and decides what this message means.
 
 card_b = AgentCard(
     name="demo.agent.sender",
@@ -118,9 +119,8 @@ card_b = AgentCard(
 
 async def main():
     await agent_b.connect()
-    # Create own mailbox so Agent A has an address to write results back to.
     b_mailbox = await agent_b.create_mailbox(card_b.name)
-    await agent_b.register(card_b)  # publish to registry (optional — B only needs to be reachable)
+    await agent_b.register(card_b)
 
     results = await agent_b.discover("translation agent")
     target = results[0]
@@ -129,11 +129,12 @@ async def main():
         message=new_text_message("你好，世界", role=Role.ROLE_USER)
     )
 
-    # Pass reply_to so Agent A streams results back to our mailbox.
-    msg_id = await agent_b.send_message(target["mailbox"], request, reply_to=b_mailbox)
-    print("Sent, msg_id:", msg_id)
+    # With reply_to, returns (msg_id, task_id).
+    # The framework stamps task_id on every reply event — readable via context.task_id.
+    msg_id, task_id = await agent_b.send_message(target["mailbox"], request, reply_to=b_mailbox)
+    print(f"Sent, msg_id={msg_id}, task_id={task_id}")
 
-    # Wait for the result — it arrives via @on_message above.
+    # Wait for the reply to arrive via @on_message above.
     await asyncio.sleep(10)
 
     await agent_b.unregister()
@@ -142,34 +143,20 @@ async def main():
 asyncio.run(main())
 ```
 
-Both agents register their own mailbox and are fully equal — each can send and receive. Agent B passes `reply_to=b_mailbox` so Agent A knows where to stream results back; the result arrives in Agent B's `@on_message` handler.
+`send_message` with `reply_to` returns `(msg_id, task_id)`. The framework stamps `task_id` on every reply event so your `@on_message` handler can read it from `context.task_id`. All messages — replies and new incoming tasks — arrive in the same handler; business logic decides what each `task_id` means.
 
 ---
 
 ## Mq9A2AAgent
 
 ```python
-Mq9A2AAgent(
-    *,
-    server: str = "nats://demo.robustmq.com:4222",
-    mailbox_ttl: int = 0,
-    request_timeout: float = 60,
-    group_name: str | None = None,
-    deliver: str = "earliest",
-    num_msgs: int = 10,
-    max_wait_ms: int = 500,
-)
+Mq9A2AAgent(*, server: str = "nats://demo.robustmq.com:4222", request_timeout: float = 60)
 ```
 
 | Parameter | Type | Description |
 | --- | --- | --- |
 | `server` | `str` | mq9 broker NATS URL. Defaults to the public debug server `nats://demo.robustmq.com:4222` — can be omitted during development |
-| `mailbox_ttl` | `int` | Mailbox TTL in seconds (`0` = permanent) |
 | `request_timeout` | `float` | Default timeout for outbound requests in seconds |
-| `group_name` | `str \| None` | Consumer group name. Defaults to `{mailbox}.workers` — ensures consumption resumes from the last offset after a restart |
-| `deliver` | `str` | Where to start consuming: `"earliest"` resumes from last offset, `"latest"` only receives new messages |
-| `num_msgs` | `int` | Number of messages to fetch per poll, default `10` |
-| `max_wait_ms` | `int` | Max time to wait per fetch when no messages are available, in milliseconds, default `500` |
 
 ### `agent.connect`
 
@@ -181,19 +168,35 @@ Stop consuming messages and disconnect from the broker. Call this after the back
 
 ### `@agent.on_message`
 
-Decorator — registers the async message handler:
+Decorator — registers the async message handler. Consumer options can be set here:
 
 ```python
+# plain
 @agent.on_message
 async def handle(context: RequestContext, event_queue: EventQueue) -> None:
     ...
+
+# with consumer options
+@agent.on_message(group_name="my-group", num_msgs=20)
+async def handle(context: RequestContext, event_queue: EventQueue) -> None:
+    ...
 ```
+
+| Parameter | Description |
+| --- | --- |
+| `group_name` | Consumer group name. Defaults to `{mailbox}.workers` — ensures consumption resumes from the last offset after a restart |
+| `deliver` | Where to start: `"earliest"` (default) resumes from last offset, `"latest"` only receives new messages |
+| `num_msgs` | Number of messages to fetch per poll, default `10` |
+| `max_wait_ms` | Max wait per fetch when no messages are available, milliseconds, default `500` |
 
 ### `agent.create_mailbox`
 
 Create a mailbox and start the consumer in the background. **Returns immediately** with the mailbox address.
 
-Parameter: `name: str` — mailbox name, typically `AgentCard.name`.
+| Parameter | Description |
+| --- | --- |
+| `name` | Mailbox name, typically `AgentCard.name` |
+| `ttl` | Mailbox TTL in seconds (`0` = permanent, default) |
 
 Returns `str` — the mailbox address. The agent can receive messages immediately after this call, without being in the registry.
 
@@ -227,8 +230,10 @@ Send a message to another agent.
 | --- | --- |
 | `mail_address` | Agent info dict from `discover()` (must have `mailbox`), or a raw mailbox address string |
 | `request` | `SendMessageRequest` (from `a2a.types.a2a_pb2`) |
+| `reply_to` | Your own mailbox address. When set, the framework generates a `task_id` and stamps it on every reply event — readable as `context.task_id` in your `@on_message` handler |
 
-Returns `int` — the `msg_id` assigned by the broker, confirming the message was queued.
+- Without `reply_to`: returns `int` (`msg_id` assigned by the broker)
+- With `reply_to`: returns `(msg_id, task_id)` — hold onto `task_id` to identify replies in your handler
 
 ### `agent.get_task`
 

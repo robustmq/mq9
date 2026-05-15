@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import InMemoryEventQueue
@@ -49,6 +50,7 @@ _HEADER_METHOD   = "mq9-a2a-method"   # which RPC method this message represents
 _HEADER_REPLY_TO = "mq9-reply-to"     # callback mailbox address for responses
 _HEADER_LAST     = "mq9-a2a-last"     # "true" on the final event in a stream
 _HEADER_TYPE     = "mq9-a2a-type"     # protobuf message type name for deserialization
+_HEADER_TASK_ID  = "mq9-a2a-task-id"  # task_id for routing reply events back to the caller
 
 # RPC method names carried in _HEADER_METHOD.
 # Absence of the header means SendMessage (the default / most common case).
@@ -69,20 +71,10 @@ class Mq9A2AAgent:
         self,
         *,
         server: str = _DEFAULT_SERVER,
-        mailbox_ttl: int = 0,
         request_timeout: float = _DEFAULT_TIMEOUT,
-        group_name: str | None = None,
-        deliver: str = "earliest",
-        num_msgs: int = 10,
-        max_wait_ms: int = 500,
     ) -> None:
         self._server = server
-        self._mailbox_ttl = mailbox_ttl
         self._timeout = request_timeout
-        self._group_name = group_name       # None → auto-derive as "{name}.workers"
-        self._deliver = deliver
-        self._num_msgs = num_msgs
-        self._max_wait_ms = max_wait_ms
 
         self._executor: _FnAgentExecutor | None = None
         self._mq9: Mq9Client | None = None
@@ -93,10 +85,44 @@ class Mq9A2AAgent:
         self._consumer = None
         self._heartbeat_task: asyncio.Task | None = None
 
-    def on_message(self, fn: HandlerFn) -> HandlerFn:
-        """Decorator: register the async message handler."""
-        self._executor = _FnAgentExecutor(fn)
-        return fn
+        # consumer options — set via @on_message(group_name=...) decorator
+        self._group_name: str | None = None
+        self._deliver: str = "earliest"
+        self._num_msgs: int = 10
+        self._max_wait_ms: int = 500
+
+    def on_message(
+        self,
+        fn: HandlerFn | None = None,
+        *,
+        group_name: str | None = None,
+        deliver: str = "earliest",
+        num_msgs: int = 10,
+        max_wait_ms: int = 500,
+    ):
+        """Decorator: register the async message handler.
+
+        Can be used plain or with consumer options::
+
+            @agent.on_message
+            async def handle(context, event_queue): ...
+
+            @agent.on_message(group_name="my-group", num_msgs=20)
+            async def handle(context, event_queue): ...
+        """
+        def _register(f: HandlerFn) -> HandlerFn:
+            self._executor = _FnAgentExecutor(f)
+            self._group_name = group_name
+            self._deliver = deliver
+            self._num_msgs = num_msgs
+            self._max_wait_ms = max_wait_ms
+            return f
+
+        if fn is not None:
+            # used as @agent.on_message without call — fn is the decorated function
+            return _register(fn)
+        # used as @agent.on_message(...) with arguments — return the actual decorator
+        return _register
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -110,7 +136,7 @@ class Mq9A2AAgent:
         if self._mq9:
             await self._mq9.close()
 
-    async def create_mailbox(self, name: str) -> str:
+    async def create_mailbox(self, name: str, *, ttl: int = 0) -> str:
         """Create a mailbox with the given name and start the consumer.
 
         Call connect() first. Returns the mailbox address immediately.
@@ -124,7 +150,7 @@ class Mq9A2AAgent:
 
         # Create the main inbox. The name becomes the stable mailbox address
         # that other agents use to send tasks to this agent.
-        self._mailbox = await mq9.mailbox_create(name=name, ttl=self._mailbox_ttl)
+        self._mailbox = await mq9.mailbox_create(name=name, ttl=ttl)
         _logger.info("[mq9.a2a] mailbox=%s", self._mailbox)
 
         # Create a separate mailbox for task persistence. Storing tasks under
@@ -132,7 +158,7 @@ class Mq9A2AAgent:
         # task states after a restart without reprocessing the entire inbox.
         tasks_mailbox = f"{name}.tasks"
         try:
-            await mq9.mailbox_create(name=tasks_mailbox, ttl=self._mailbox_ttl)
+            await mq9.mailbox_create(name=tasks_mailbox, ttl=ttl)
         except Exception:
             pass  # already exists on restart — that's fine
         self._task_store = Mq9A2ATaskStore(mq9, tasks_mailbox)
@@ -237,29 +263,30 @@ class Mq9A2AAgent:
         request: SendMessageRequest,
         *,
         reply_to: str | None = None,
-    ) -> int:
+    ) -> tuple[int, str] | int:
         """Send an A2A SendMessageRequest to another agent.
 
         mail_address: agent info dict from discover() (needs 'mailbox' key) or
                       raw mailbox address string.
-        reply_to: your own mailbox address. When set, the executing agent will
-                  send result events back to this address so you can receive them
-                  via fetch(). Without this, communication is one-way.
+        reply_to: your own mailbox address. When set, a task_id is generated and
+                  stamped on every reply event so your @on_message handler can
+                  identify which task a reply belongs to via context.task_id.
 
-        Returns the msg_id assigned by the broker (confirms the message was queued).
+        Returns (msg_id, task_id) when reply_to is set, plain msg_id otherwise.
         """
         mq9 = self._mq9_or_raise()
         mailbox = _mailbox_of(mail_address)
         payload = json_format.MessageToJson(request).encode()
         if reply_to:
-            # Carry the callback address in the A2A header so the executing
-            # agent knows where to stream result events back to.
+            task_id = str(uuid.uuid4())
+            headers = {
+                _HEADER_REPLY_TO: reply_to,
+                _HEADER_TASK_ID: task_id,   # executor stamps this on every reply event
+            }
             resp = await mq9._request_with_headers(
-                f"$mq9.AI.MSG.SEND.{mailbox}",
-                payload,
-                {_HEADER_REPLY_TO: reply_to},
+                f"$mq9.AI.MSG.SEND.{mailbox}", payload, headers,
             )
-            return resp.get("msg_id", 0)
+            return resp.get("msg_id", 0), task_id
         return await mq9.send(mailbox, payload)
 
     async def get_task(self, mail_address: dict | str, task_id: str) -> Task | None:
@@ -357,12 +384,14 @@ class Mq9A2AAgent:
             _logger.error("[mq9.a2a] bad SendMessageRequest: %s", exc)
             return
 
-        # _ForwardingEventQueue forwards every enqueued event to reply_to in real
-        # time, enabling the sender to stream partial results as they arrive.
-        event_queue = _ForwardingEventQueue(mq9_client=self._mq9, reply_to=reply_to)
+        # Read the task_id the sender stamped on this request so every reply
+        # event carries it back — the sender's _dispatch uses it to route replies
+        # to the correct pending queue rather than the @on_message handler.
+        task_id = (msg.headers or {}).get(_HEADER_TASK_ID)
+        event_queue = _ForwardingEventQueue(mq9_client=self._mq9, reply_to=reply_to, task_id=task_id)
         context = RequestContext(
             request=request,
-            task_id=None,
+            task_id=task_id,        # handler can read context.task_id for status/artifact events
             context_id=None,
             task_store=self._task_store,
         )
@@ -455,21 +484,22 @@ class Mq9A2AAgent:
 class _ForwardingEventQueue(InMemoryEventQueue):
     """Event queue that forwards each event to a reply-to mailbox as it is enqueued.
 
-    This enables streaming: the sender receives TaskStatusUpdateEvents and
-    TaskArtifactUpdateEvents in real time rather than waiting for the handler
-    to finish.
+    Each forwarded event carries the original task_id in its header so the
+    receiver's _dispatch can route it to the correct pending queue rather than
+    the @on_message handler.
     """
 
-    def __init__(self, mq9_client: Mq9Client, reply_to: str | None) -> None:
+    def __init__(self, mq9_client: Mq9Client, reply_to: str | None, task_id: str | None = None) -> None:
         super().__init__()
         self._mq9 = mq9_client
         self._reply_to = reply_to
+        self._task_id = task_id
         self._closed = False  # guard against double flush_last
 
     async def enqueue_event(self, event) -> None:
         await super().enqueue_event(event)
         if self._reply_to and self._mq9:
-            await _send_event(self._mq9, self._reply_to, event, last=False)
+            await _send_event(self._mq9, self._reply_to, event, last=False, task_id=self._task_id)
 
     async def flush_last(self) -> None:
         """Send the terminal marker so the receiver knows the stream is done."""
@@ -479,6 +509,7 @@ class _ForwardingEventQueue(InMemoryEventQueue):
                 self._mq9, self._reply_to,
                 TaskStatusUpdateEvent(status=TaskStatus(state=TaskState.TASK_STATE_COMPLETED)),
                 last=True,
+                task_id=self._task_id,
             )
 
 
@@ -498,6 +529,7 @@ async def _send_event(
     event,
     *,
     last: bool,
+    task_id: str | None = None,
     priority: Priority = Priority.NORMAL,
 ) -> None:
     """Serialize a protobuf event and deliver it to reply_to with A2A headers."""
@@ -505,6 +537,10 @@ async def _send_event(
     headers: dict[str, str] = {_HEADER_TYPE: type(event).__name__}
     if last:
         headers[_HEADER_LAST] = "true"
+    if task_id:
+        # Stamp task_id so the receiver's _dispatch routes this event to the
+        # correct pending queue instead of the @on_message handler.
+        headers[_HEADER_TASK_ID] = task_id
     if priority != Priority.NORMAL:
         headers["mq9-priority"] = priority.value
     try:

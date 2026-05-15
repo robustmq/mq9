@@ -19,7 +19,7 @@ import asyncio
 import os
 import sys
 
-from a2a.helpers import new_task_from_user_message, new_text_artifact, new_text_message
+from a2a.helpers import new_text_artifact, new_text_message
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
 from a2a.types.a2a_pb2 import (
@@ -71,38 +71,24 @@ AGENT_B_CARD = AgentCard(
 def make_agent_a() -> Mq9A2AAgent:
     agent = Mq9A2AAgent(server=SERVER)
 
-    @agent.on_message
+    @agent.on_message(group_name="demo.agent.translator.workers", deliver="earliest", num_msgs=10, max_wait_ms=500)
     async def handle(context: RequestContext, event_queue: EventQueue) -> None:
-        # Resume an existing task (multi-turn), or create a new one.
-        task = context.current_task or new_task_from_user_message(context.message)
-        # First event must be the Task object — creates the task record on the sender's side.
-        await event_queue.enqueue_event(task)
+        # The following follows the A2A protocol's standard event sequence: WORKING → Artifact → COMPLETED
 
-        # Tell Agent B we've started processing.
+        # A2A protocol: send WORKING first to tell the sender processing has started.
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=context.task_id,
                 context_id=context.context_id,
-                status=TaskStatus(
-                    state=TaskState.TASK_STATE_WORKING,
-                    message=new_text_message("Translating…"),
-                ),
+                status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
             )
         )
 
-        # Extract the first text part from the incoming message.
-        text = ""
-        if context.message and context.message.parts:
-            part = context.message.parts[0]
-            if hasattr(part, "text"):
-                text = part.text
-
-        # Do the actual work — replace with real logic.
+        # A2A protocol: a Message consists of one or more Parts (text / data / file).
+        text = context.message.parts[0].text if context.message and context.message.parts else ""
         translated = f"[translated] {text}"
 
-        # Send the result back as an artifact.
-        # Because Agent B passed its mailbox as reply_to, _ForwardingEventQueue
-        # delivers this event directly to Agent B's @on_message handler.
+        # A2A protocol: push result as an Artifact — call multiple times for streaming.
         await event_queue.enqueue_event(
             TaskArtifactUpdateEvent(
                 task_id=context.task_id,
@@ -110,7 +96,7 @@ def make_agent_a() -> Mq9A2AAgent:
                 artifact=new_text_artifact(name="translation", text=translated),
             )
         )
-        # Signal completion — Agent B's handler will receive this as the last event.
+        # A2A protocol: send COMPLETED last to signal the task is done.
         await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=context.task_id,
@@ -142,33 +128,25 @@ async def run_agent() -> None:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Agent B — sender + receiver
-# Registers its own mailbox, sends a task with reply_to=own mailbox,
-# and handles the incoming result via @on_message just like any other agent.
+# Sends a task with reply_to=own mailbox. Reply events are routed by task_id
+# into a per-task Queue in _pending — consumed directly here, not via @on_message.
+# @on_message is still registered to handle any *new* tasks Agent A might send to B.
 # ──────────────────────────────────────────────────────────────────────────────
 
-def make_agent_b(done_event: asyncio.Event) -> Mq9A2AAgent:
-    agent = Mq9A2AAgent(server=SERVER)
-
-    @agent.on_message
-    async def handle(context: RequestContext, _) -> None:
-        # Agent B receives result events sent back by Agent A.
-        if context.message and context.message.parts:
-            part = context.message.parts[0]
-            if hasattr(part, "text"):
-                print(f"[agent-b] received result: {part.text}")
-        # Signal the main coroutine that the result arrived.
-        done_event.set()
-
-    return agent
-
-
 async def run_client() -> None:
-    done = asyncio.Event()
-    agent_b = make_agent_b(done)
+    agent_b = Mq9A2AAgent(server=SERVER)
+
+    # All incoming messages arrive here — both reply events and new tasks.
+    # Use context.task_id to tell them apart: if it matches a task we sent,
+    # it's a reply; otherwise it's a new incoming task.
+    @agent_b.on_message(group_name="demo.agent.sender.workers", deliver="earliest", num_msgs=10, max_wait_ms=500)
+    async def handle_incoming(context: RequestContext, _: EventQueue) -> None:
+        text = context.message.parts[0].text if context.message and context.message.parts else ""
+        print(f"[agent-b] received message task_id={context.task_id}: {text}")
+
     await agent_b.connect()
 
     # Agent B creates its own mailbox so Agent A has an address to write results back to.
-    # register() is optional here — B only needs to be reachable, not discoverable.
     b_mailbox = await agent_b.create_mailbox(AGENT_B_CARD.name)
     await agent_b.register(AGENT_B_CARD)
     print(f"[agent-b] mailbox={b_mailbox}")
@@ -185,25 +163,22 @@ async def run_client() -> None:
     target = agents[0]
     print(f"[agent-b] found: name={target.get('name')}  mailbox={target.get('mailbox')}")
 
-    # Send the task, passing our own mailbox as reply_to.
-    # Agent A will stream result events back to this address.
     request = SendMessageRequest(
         message=new_text_message("你好，世界", role=Role.ROLE_USER)
     )
     print("\n[agent-b] sending task…")
-    msg_id = await agent_b.send_message(
+    # send_message returns (msg_id, task_id) when reply_to is set.
+    # Hold onto task_id — reply events arrive in @on_message with context.task_id set.
+    msg_id, task_id = await agent_b.send_message(
         target["mailbox"],
         request,
         reply_to=b_mailbox,
     )
-    print(f"[agent-b] sent, msg_id={msg_id}")
+    print(f"[agent-b] sent, msg_id={msg_id}, task_id={task_id}")
 
-    # Wait for the result to arrive in our @on_message handler (max 30s).
+    # Give Agent A time to process and deliver the reply via @on_message.
     print("[agent-b] waiting for result…")
-    try:
-        await asyncio.wait_for(done.wait(), timeout=30)
-    except asyncio.TimeoutError:
-        print("[agent-b] timed out waiting for result")
+    await asyncio.sleep(10)
 
     print("\n[agent-b] done.")
     await agent_b.unregister()

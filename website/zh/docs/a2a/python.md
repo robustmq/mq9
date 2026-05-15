@@ -31,7 +31,7 @@ pip install mq9
 
 ```python
 import asyncio
-from a2a.helpers import new_task_from_user_message, new_text_artifact, new_text_message
+from a2a.helpers import new_text_artifact, new_text_message
 from a2a.server.agent_execution import RequestContext
 from a2a.server.events import EventQueue
 from a2a.types.a2a_pb2 import (
@@ -42,31 +42,29 @@ from mq9.a2a import Mq9A2AAgent
 
 agent = Mq9A2AAgent()  # 默认连接公共调试服务
 
-@agent.on_message
+@agent.on_message(group_name="demo.agent.translator.workers", deliver="earliest", num_msgs=10, max_wait_ms=500)
 async def handle(context: RequestContext, event_queue: EventQueue) -> None:
-    # 续接已有任务（多轮对话），或从当前消息创建新任务
-    task = context.current_task or new_task_from_user_message(context.message)
-    # 第一个事件必须是 Task 对象，在发送方建立任务记录
-    await event_queue.enqueue_event(task)
+    # 以下事件推送遵循 A2A 协议规定的标准流程：WORKING → Artifact → COMPLETED
 
-    # 通知发送方：任务已开始处理
+    # A2A 协议：先发 WORKING，告知发送方任务已开始处理
     await event_queue.enqueue_event(TaskStatusUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
         status=TaskStatus(state=TaskState.TASK_STATE_WORKING),
     ))
 
-    # 提取消息第一个文本部分
+    # A2A 协议：Message 由多个 Part 组成，每个 Part 可以是 text/data/file
+    # 这里取第一个 text part，即发送方传入的文本内容
     text = context.message.parts[0].text if context.message.parts else ""
     result = my_translate(text)  # 替换为你的翻译逻辑
 
-    # 推送结果；可多次调用实现流式输出
+    # A2A 协议：推送结果 Artifact，可多次调用实现流式输出
     await event_queue.enqueue_event(TaskArtifactUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
         artifact=new_text_artifact(name="translation", text=result),
     ))
-    # 标志任务完成，发送方的流到此结束
+    # A2A 协议：最后发 COMPLETED，标志任务结束
     await event_queue.enqueue_event(TaskStatusUpdateEvent(
         task_id=context.task_id,
         context_id=context.context_id,
@@ -103,11 +101,13 @@ from mq9.a2a import Mq9A2AAgent
 
 agent_b = Mq9A2AAgent()  # 默认连接公共调试服务
 
-# 注册自己的 @on_message，用于接收 Agent A 发回的结果
-@agent_b.on_message
-async def on_result(context: RequestContext, _) -> None:
+# 所有消息都到这里——包括结果回包和其他 Agent 主动发来的新任务
+# 通过 context.task_id 区分：和自己发出的 task_id 对上了就是回包，否则是新任务
+@agent_b.on_message(group_name="demo.agent.sender.workers", deliver="earliest", num_msgs=10, max_wait_ms=500)
+async def handle_incoming(context: RequestContext, _: EventQueue) -> None:
     text = context.message.parts[0].text if context.message.parts else ""
-    print("收到结果：", text)
+    print(f"收到消息 task_id={context.task_id}：{text}")
+    # 业务层持有 task_id，自己决定这条消息的意义
 
 card_b = AgentCard(
     name="demo.agent.sender",
@@ -118,9 +118,8 @@ card_b = AgentCard(
 
 async def main():
     await agent_b.connect()
-    # 创建自己的 mailbox，作为 Agent A 回写结果的地址
     b_mailbox = await agent_b.create_mailbox(card_b.name)
-    await agent_b.register(card_b)  # 发布到注册中心（可选，B 只需要可达即可）
+    await agent_b.register(card_b)
 
     results = await agent_b.discover("翻译 agent")
     target = results[0]
@@ -129,11 +128,12 @@ async def main():
         message=new_text_message("你好，世界", role=Role.ROLE_USER)
     )
 
-    # 发送时带上自己的 mailbox，Agent A 会把结果写回这里
-    msg_id = await agent_b.send_message(target["mailbox"], request, reply_to=b_mailbox)
-    print("已发送，msg_id:", msg_id)
+    # 带 reply_to 时返回 (msg_id, task_id)
+    # 框架把 task_id 透传到每条回包的 context.task_id，业务自己处理
+    msg_id, task_id = await agent_b.send_message(target["mailbox"], request, reply_to=b_mailbox)
+    print(f"已发送，msg_id={msg_id}，task_id={task_id}")
 
-    # 等待结果到达（结果会触发上面的 @on_message）
+    # 等待结果通过 @on_message 到达
     await asyncio.sleep(10)
 
     await agent_b.unregister()
@@ -142,34 +142,20 @@ async def main():
 asyncio.run(main())
 ```
 
-Agent B 注册自己的 mailbox 并在发送时通过 `reply_to` 带上该地址，Agent A 就会把结果写回来，`@on_message` 处理器会收到结果。两个 Agent 都是平等的——都可以发送、也都可以接收。
+`send_message` 带 `reply_to` 时返回 `(msg_id, task_id)`。框架把 `task_id` 透传到每条回包的 `context.task_id`，所有消息统一进 `@on_message`，业务层用 `task_id` 自行区分回包和新任务。
 
 ---
 
 ## Mq9A2AAgent
 
 ```python
-Mq9A2AAgent(
-    *,
-    server: str = "nats://demo.robustmq.com:4222",
-    mailbox_ttl: int = 0,
-    request_timeout: float = 60,
-    group_name: str | None = None,
-    deliver: str = "earliest",
-    num_msgs: int = 10,
-    max_wait_ms: int = 500,
-)
+Mq9A2AAgent(*, server: str = "nats://demo.robustmq.com:4222", request_timeout: float = 60)
 ```
 
 | 参数 | 类型 | 说明 |
 | --- | --- | --- |
 | `server` | `str` | mq9 broker 的 NATS 地址。默认连接公共调试服务 `nats://demo.robustmq.com:4222`，可不填 |
-| `mailbox_ttl` | `int` | Mailbox 存活时间，秒（`0` 表示永久） |
 | `request_timeout` | `float` | 对外发送请求的默认超时时间，秒 |
-| `group_name` | `str \| None` | 消费组名称。不填时自动使用 `{mailbox名}.workers`，保证重启后从断点续消费 |
-| `deliver` | `str` | 消费起点：`"earliest"` 从最早未消费处开始，`"latest"` 只消费新消息 |
-| `num_msgs` | `int` | 每次 fetch 批量拉取的消息数，默认 `10` |
-| `max_wait_ms` | `int` | 每次 fetch 无消息时的最长等待时间，毫秒，默认 `500` |
 
 ### `agent.connect`
 
@@ -181,19 +167,35 @@ Mq9A2AAgent(
 
 ### `@agent.on_message`
 
-装饰器，注册消息处理函数：
+装饰器，注册消息处理函数，同时可配置消费者参数：
 
 ```python
+# 不带参数
 @agent.on_message
 async def handle(context: RequestContext, event_queue: EventQueue) -> None:
     ...
+
+# 带消费者参数
+@agent.on_message(group_name="my-group", num_msgs=20)
+async def handle(context: RequestContext, event_queue: EventQueue) -> None:
+    ...
 ```
+
+| 参数 | 说明 |
+| --- | --- |
+| `group_name` | 消费组名称。不填时自动使用 `{mailbox名}.workers`，保证重启后从断点续消费 |
+| `deliver` | 消费起点：`"earliest"`（默认）从最早未消费处开始，`"latest"` 只消费新消息 |
+| `num_msgs` | 每次 fetch 批量拉取的消息数，默认 `10` |
+| `max_wait_ms` | 每次 fetch 无消息时的最长等待时间，毫秒，默认 `500` |
 
 ### `agent.create_mailbox`
 
 创建 mailbox 并在后台启动消费者，**立即返回** mailbox 地址字符串。
 
-参数：`name: str` — mailbox 名称，即 `AgentCard.name`。
+| 参数 | 说明 |
+| --- | --- |
+| `name` | mailbox 名称，即 `AgentCard.name` |
+| `ttl` | Mailbox 存活时间，秒（`0` 表示永久，默认） |
 
 返回值：`str`，mailbox 地址。创建后即可接收消息，无需注册到注册中心。
 
@@ -229,8 +231,10 @@ async def handle(context: RequestContext, event_queue: EventQueue) -> None:
 | --- | --- |
 | `mail_address` | `discover()` 返回的 Agent 信息字典（需含 `mailbox`），或直接传 mailbox 地址字符串 |
 | `request` | `SendMessageRequest`（来自 `a2a.types.a2a_pb2`） |
+| `reply_to` | 自己的 mailbox 地址。设置后框架自动生成 `task_id`，每条回包的 `context.task_id` 都会带上该值，业务层用它区分不同任务的回包 |
 
-返回 `int`，broker 分配的 `msg_id`，表示消息已成功入队。
+- 不带 `reply_to`：返回 `int`，即 broker 分配的 `msg_id`
+- 带 `reply_to`：返回 `(msg_id, task_id)`，`task_id` 由框架生成
 
 ### `agent.get_task`
 
