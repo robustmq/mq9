@@ -1,43 +1,74 @@
 ---
-title: For Agent — mq9 Agent Manual
-description: How AI Agents use mq9 — mailbox, send, fetch, ACK, priority, offline delivery.
+title: For Agent — mq9 Protocol Manual
+description: Protocol reference for AI Agents — registration, discovery, mailbox, send, fetch, ACK, priority.
 ---
 
 # For Agent
 
-You are an AI Agent. This is your communication manual.
+You are an AI Agent. This is your protocol manual.
 
-> This page describes the protocol concepts. For typed SDK usage — see [For Engineer](/for-engineer).
+> This page describes the wire protocol. For typed SDK usage — see [For Engineer](/for-engineer).
 
 ## The problem you face
 
-You are ephemeral. You spin up to handle a task, then go dark. You might restart unexpectedly. You might be busy when a message arrives. You might not even exist yet when another Agent tries to reach you.
+You are ephemeral. You spin up to handle a task, then go dark. You might restart unexpectedly. You might be busy when a message arrives. You might not even exist yet when another agent tries to reach you.
 
-Standard communication tools weren't built for this:
+Beyond delivery reliability, there is a second problem: you don't know who else is out there. Other agents with complementary capabilities are running somewhere, but their addresses are not in your context. You can't collaborate with agents you can't find.
 
-- **HTTP** requires both sides to be online at the same time. You go offline — the message is gone.
-- **Redis pub/sub** has no persistence. Miss the publish window — miss the message.
-- **Direct NATS Core** is fire-and-forget. No delivery guarantee when you're offline.
-
-The result: other Agents can't reliably reach you. You can't reliably reach them.
+mq9 solves both.
 
 ## What mq9 gives you
 
-mq9 gives every Agent a **mailbox** — a persistent address that holds messages until you're ready to fetch them.
+**A registry** — announce yourself, get found. Other agents search for you by capability. You search for them the same way. No hard-coded addresses, no central configuration file.
 
-- Send a message to any Agent, whether they're online or not. mq9 stores it.
-- FETCH your mailbox when you start up. mq9 returns everything that arrived while you were gone — in priority order.
-- Messages have three priority levels. Critical commands get fetched first.
-- Mailboxes expire automatically via TTL. No manual cleanup.
-- A built-in Agent registry lets Agents find each other by capability, including semantic search.
+**A mailbox** — a persistent address that holds messages until you fetch them. Send a message to any agent, whether they're online or not. Fetch your mail when you start up. Messages survive your downtime in priority order — critical commands first.
 
-The mental model is **email, not RPC**. You send to an address. The recipient reads when ready. Neither side needs to be online at the same time.
+## Operations
 
-## How to use mq9
+### REGISTER — announce yourself
 
-### Get a mailbox
+Register at startup so other agents can find you. Your registration payload is your **AgentCard** — name plus a free-text capability description. mq9 indexes it for both keyword and semantic vector search.
 
-Before other Agents can reach you, you need an address.
+```bash
+nats request '$mq9.AI.AGENT.REGISTER' '{
+  "name": "agent.translator",
+  "mailbox": "agent.translator",
+  "payload": "Multilingual translation; supports EN/ZH/JA/KO; returns results in real time"
+}'
+```
+
+Send periodic heartbeats while running:
+
+```bash
+nats request '$mq9.AI.AGENT.REPORT' '{
+  "name": "agent.translator",
+  "report_info": "running, processed: 512 tasks"
+}'
+```
+
+### DISCOVER — find other agents
+
+Search the registry without knowing addresses in advance. Two search modes:
+
+```bash
+# Semantic vector search — natural language intent
+nats request '$mq9.AI.AGENT.DISCOVER' '{
+  "semantic": "find an agent that can translate Chinese text into English",
+  "limit": 5
+}'
+
+# Full-text keyword search
+nats request '$mq9.AI.AGENT.DISCOVER' '{
+  "text": "translator",
+  "limit": 10
+}'
+```
+
+Response includes matching agents with their names and mailbox addresses. Send directly to the returned `mailbox` field — no further lookup needed.
+
+### MAILBOX.CREATE — get a persistent address
+
+Before other agents can reach you, create a mailbox. The returned `mail_address` is your delivery address.
 
 ```bash
 nats request '$mq9.AI.MAILBOX.CREATE' '{"name":"agent.inbox","ttl":3600}'
@@ -49,16 +80,15 @@ Response:
 {"error": "", "mail_address": "agent.inbox"}
 ```
 
-- `mail_address` — your address. Share this with Agents who need to reach you.
-- `ttl` — your mailbox lives for 3600 seconds, then auto-expires with all its messages.
-- `ttl: 0` — mailbox never expires.
-- **The name must be unique.** Creating a mailbox with a name that already exists returns an error.
+- `ttl` — mailbox lives for N seconds, then auto-expires with all its messages.
+- `ttl: 0` — mailbox never expires. TTL cannot be changed after creation.
+- **Name must be unique.** Duplicate name returns an error.
 
 **mail_address format:** lowercase letters, digits, and dots only. 1–128 characters. Examples: `agent.inbox`, `task.queue.v2`, `session.20260502`.
 
 **Unguessability is your security boundary.** Anyone who knows your `mail_address` can send to it or fetch from it. Keep private mailboxes private.
 
-**You can have multiple mailboxes** — one per communication concern:
+You can have multiple mailboxes for different concerns:
 
 ```bash
 # Private inbox for task assignments
@@ -68,9 +98,9 @@ nats request '$mq9.AI.MAILBOX.CREATE' '{"ttl":7200}'
 nats request '$mq9.AI.MAILBOX.CREATE' '{"name":"task.queue","ttl":86400}'
 ```
 
-### Send a message
+### MSG.SEND — send a message
 
-You know another Agent's `mail_address`. Send to it. They may be offline — mq9 stores it.
+You know another agent's `mail_address` (from DISCOVER or shared out-of-band). Send to it. They may be offline — mq9 stores it.
 
 ```bash
 nats request '$mq9.AI.MSG.SEND.agent.inbox' \
@@ -97,28 +127,28 @@ nats request '$mq9.AI.MSG.SEND.agent.inbox' \
 
 **Optional message attributes (via headers):**
 
-| Header           | Purpose                                                          |
-| ---------------- | ---------------------------------------------------------------- |
-| `mq9-key: state` | Key dedup — only the latest message with this key is kept        |
-| `mq9-tags: a,b`  | Comma-separated tags; can be filtered in QUERY                   |
-| `mq9-delay: 60`  | Delay delivery by 60 seconds; returns `msg_id: -1`               |
-| `mq9-ttl: 300`   | Message expires in 300 s regardless of mailbox TTL               |
+| Header | Purpose |
+| ------ | ------- |
+| `mq9-key: state` | Key dedup — only the latest message with this key is kept |
+| `mq9-tags: a,b` | Comma-separated tags; can be filtered in QUERY |
+| `mq9-delay: 60` | Delay delivery by 60 seconds; returns `msg_id: -1` |
+| `mq9-ttl: 300` | Message expires in 300 s regardless of mailbox TTL |
 
 **Message body fields (recommended convention, not enforced):**
 
-| Field            | Purpose                                                  |
-| ---------------- | -------------------------------------------------------- |
-| `from`           | Sender's `mail_address`                                  |
-| `type`           | Message kind: `task`, `result`, `question`, `approval_request` |
-| `correlation_id` | Links a message to its reply                             |
-| `reply_to`       | The `mail_address` where you want the response sent      |
-| `payload`        | The actual content — mq9 does not inspect or validate it |
+| Field | Purpose |
+| ----- | ------- |
+| `from` | Sender's `mail_address` |
+| `type` | Message kind: `task`, `result`, `question`, `approval_request` |
+| `correlation_id` | Links a message to its reply |
+| `reply_to` | The `mail_address` where you want the response sent |
+| `payload` | The actual content — mq9 does not inspect or validate it |
 
 mq9 treats the message body as opaque bytes. These fields are a convention, not a protocol requirement.
 
-### Fetch messages (FETCH + ACK)
+### MSG.FETCH — pull messages
 
-mq9 uses **pull mode**. You actively FETCH messages when you're ready — not a push subscription.
+mq9 uses **pull mode**. You actively FETCH when you're ready — no push subscription.
 
 ```bash
 nats request '$mq9.AI.MSG.FETCH.agent.inbox' '{
@@ -128,7 +158,7 @@ nats request '$mq9.AI.MSG.FETCH.agent.inbox' '{
 }'
 ```
 
-Response — sorted by priority (`critical` → `urgent` → `normal`, FIFO within each level):
+Response — sorted by priority (`critical` → `urgent` → `normal`, FIFO within each tier):
 
 ```json
 {
@@ -140,18 +170,20 @@ Response — sorted by priority (`critical` → `urgent` → `normal`, FIFO with
 }
 ```
 
-**`group_name`** enables stateful consumption: the broker records your offset. After ACK, the next FETCH resumes from where you left off — no duplicate delivery. Omit `group_name` for stateless one-off reads.
-
 **`deliver` start policies:**
 
-| Value       | Description                                  |
-| ----------- | -------------------------------------------- |
-| `latest`    | Only messages arriving from this point on    |
-| `earliest`  | Start from the oldest message in the mailbox |
-| `from_time` | Start from after a Unix timestamp            |
-| `from_id`   | Start from a specific `msg_id`               |
+| Value | Description |
+| ----- | ----------- |
+| `latest` | Only messages arriving from this point on |
+| `earliest` | Start from the oldest message in the mailbox |
+| `from_time` | Start from after a Unix timestamp |
+| `from_id` | Start from a specific `msg_id` |
 
-After processing, call ACK to advance your offset:
+**`group_name`** enables stateful consumption: the broker records your offset. After ACK, the next FETCH resumes from where you left off — no duplicate delivery. Omit `group_name` for stateless one-off reads.
+
+### MSG.ACK — advance your offset
+
+After processing a batch, ACK to advance your consumption offset:
 
 ```bash
 nats request '$mq9.AI.MSG.ACK.agent.inbox' '{
@@ -163,22 +195,25 @@ nats request '$mq9.AI.MSG.ACK.agent.inbox' '{
 
 Pass the `msg_id` of the **last message in the batch** — one ACK confirms the whole batch.
 
-### Reply to a message
+**FETCH + ACK flow:**
 
-If the sender set `reply_to`, send your result to that `mail_address`:
-
-```bash
-nats request '$mq9.AI.MSG.SEND.sender.mailbox' '{
-  "from": "agent.inbox",
-  "type": "task_result",
-  "correlation_id": "req-001",
-  "payload": {"result": "done"}
-}'
+```text
+FETCH (group_name=my-worker, deliver=earliest)
+  │
+  └─→ [msg_id:1 critical] [msg_id:2 urgent] [msg_id:3 normal]
+         │                      │                   │
+       process               process             process
+                                                     │
+                                              ACK (msg_id:3)
+                                                     │
+                                         broker advances offset to 3
+                                                     │
+                                next FETCH resumes from msg_id:4
 ```
 
-### Inspect without consuming (QUERY)
+### MSG.QUERY — inspect without consuming
 
-QUERY returns stored messages **without affecting your consumption offset**. Use it for debugging or state inspection:
+QUERY returns stored messages **without affecting your consumption offset**. Use for debugging or state inspection.
 
 ```bash
 # All messages
@@ -191,9 +226,9 @@ nats request '$mq9.AI.MSG.QUERY.agent.inbox' '{"key":"status"}'
 nats request '$mq9.AI.MSG.QUERY.agent.inbox' '{"since":1712600000,"limit":20}'
 ```
 
-QUERY never moves your offset. Two consecutive QUERYs return the same result (assuming no new messages).
+QUERY never moves your offset. Two consecutive QUERYs return the same result (assuming no new messages arrive).
 
-### Delete a message
+### MSG.DELETE — delete a specific message
 
 ```bash
 nats request '$mq9.AI.MSG.DELETE.agent.inbox.5' '{}'
@@ -201,18 +236,7 @@ nats request '$mq9.AI.MSG.DELETE.agent.inbox.5' '{}'
 
 Subject pattern: `$mq9.AI.MSG.DELETE.{mail_address}.{msg_id}`
 
-## Advertise your capabilities
-
-Register at startup so other Agents can discover you:
-
-```bash
-nats request '$mq9.AI.AGENT.REGISTER' '{
-  "name": "agent.translator",
-  "payload": "Multilingual translation; supports EN/ZH/JA/KO; returns results in real time"
-}'
-```
-
-Send periodic heartbeats:
+### AGENT.REPORT — send a heartbeat
 
 ```bash
 nats request '$mq9.AI.AGENT.REPORT' '{
@@ -221,45 +245,27 @@ nats request '$mq9.AI.AGENT.REPORT' '{
 }'
 ```
 
-Unregister at shutdown:
+Send periodically while the agent is active. Heartbeats allow the registry to surface freshness metadata to agents that discover you.
+
+### AGENT.UNREGISTER — deregister at shutdown
 
 ```bash
 nats request '$mq9.AI.AGENT.UNREGISTER' '{"name":"agent.translator"}'
 ```
 
-## Discover other Agents
+## Protocol overview
 
-Find agents by capability without knowing their address in advance:
-
-```bash
-# Semantic vector search (natural language intent)
-nats request '$mq9.AI.AGENT.DISCOVER' '{
-  "semantic": "find an agent that can translate Chinese text into English",
-  "limit": 5
-}'
-
-# Full-text keyword search
-nats request '$mq9.AI.AGENT.DISCOVER' '{
-  "text": "translator",
-  "limit": 10
-}'
-```
-
-Once you have a matching agent's `mail_address`, send to it directly.
-
-## Protocol summary
-
-| Operation         | Subject pattern                                 |
-| ----------------- | ----------------------------------------------- |
-| Create mailbox    | `$mq9.AI.MAILBOX.CREATE`                        |
-| Send message      | `$mq9.AI.MSG.SEND.{mail_address}`               |
-| Fetch messages    | `$mq9.AI.MSG.FETCH.{mail_address}`              |
-| ACK               | `$mq9.AI.MSG.ACK.{mail_address}`                |
-| Query (inspect)   | `$mq9.AI.MSG.QUERY.{mail_address}`              |
-| Delete message    | `$mq9.AI.MSG.DELETE.{mail_address}.{msg_id}`    |
-| Register Agent    | `$mq9.AI.AGENT.REGISTER`                        |
-| Unregister Agent  | `$mq9.AI.AGENT.UNREGISTER`                      |
-| Report status     | `$mq9.AI.AGENT.REPORT`                          |
-| Discover Agents   | `$mq9.AI.AGENT.DISCOVER`                        |
+| Operation | Subject pattern |
+| --------- | --------------- |
+| Register Agent | `$mq9.AI.AGENT.REGISTER` |
+| Discover Agents | `$mq9.AI.AGENT.DISCOVER` |
+| Report status | `$mq9.AI.AGENT.REPORT` |
+| Unregister Agent | `$mq9.AI.AGENT.UNREGISTER` |
+| Create mailbox | `$mq9.AI.MAILBOX.CREATE` |
+| Send message | `$mq9.AI.MSG.SEND.{mail_address}` |
+| Fetch messages | `$mq9.AI.MSG.FETCH.{mail_address}` |
+| ACK | `$mq9.AI.MSG.ACK.{mail_address}` |
+| Query (inspect) | `$mq9.AI.MSG.QUERY.{mail_address}` |
+| Delete message | `$mq9.AI.MSG.DELETE.{mail_address}.{msg_id}` |
 
 *For SDK usage in Python, Go, JavaScript, Rust, and Java — see [For Engineer](/for-engineer).*

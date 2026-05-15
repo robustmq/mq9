@@ -1,9 +1,8 @@
 ---
 title: What is mq9
 description: mq9 — Agent registration, discovery, and reliable async messaging for multi-agent systems.
+outline: deep
 ---
-
-# What is mq9
 
 mq9 is a broker that provides Agent registration, discovery, and reliable asynchronous messaging — designed to scale to millions of agents.
 
@@ -111,6 +110,7 @@ Messages are labeled `critical`, `urgent`, or `normal` via the `mq9-priority` he
 **vs. A2A (Google's Agent2Agent)** — A2A defines how agents negotiate tasks at the application layer. mq9 handles reliable delivery and discovery at the transport layer. They are complementary — A2A workflows can run over mq9.
 
 **mq9 is not:**
+
 - A replacement for HTTP/gRPC between always-online services
 - A data pipeline or event log
 - An orchestration framework — it moves messages and enables discovery, not decisions

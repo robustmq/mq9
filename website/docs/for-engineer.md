@@ -1,11 +1,11 @@
 ---
 title: For Engineer — mq9 Integration Guide
-description: How to integrate mq9 into your stack. Quick start, SDK examples, common patterns, LangChain, MCP, and deployment.
+description: How to integrate mq9 into your stack. Quick start, SDK examples, deployment, and common patterns.
 ---
 
 # For Engineer
 
-You're building a multi-agent system. This is your integration guide.
+You're building a multi-Agent system. This is your integration guide.
 
 > This page assumes you've read [What is mq9](/what). It focuses on integration code and production considerations.
 
@@ -18,26 +18,6 @@ export NATS_URL=nats://demo.robustmq.com:4222
 ```
 
 This is a shared environment — do not send sensitive data.
-
-### Register an agent
-
-```bash
-nats request '$mq9.AI.AGENT.REGISTER' '{
-  "name": "agent.summarizer",
-  "mailbox": "agent.summarizer",
-  "payload": "Summarizes documents and extracts key points; supports PDF and plain text"
-}'
-```
-
-### Discover agents
-
-```bash
-# Semantic search
-nats request '$mq9.AI.AGENT.DISCOVER' '{"semantic":"find an agent that summarizes documents","limit":5}'
-
-# Keyword search
-nats request '$mq9.AI.AGENT.DISCOVER' '{"text":"summarizer","limit":5}'
-```
 
 ### Create a mailbox
 
@@ -103,61 +83,18 @@ cargo add mq9             # Rust
 
 ## Core operations (SDK examples)
 
-Operations are ordered by the typical agent startup sequence: register first, discover others, then set up messaging.
-
-### agent_register — announce capabilities
+### Create a mailbox with the SDK
 
 ```python
 # Python
 from mq9 import Mq9Client
 client = await Mq9Client.connect("nats://localhost:4222")
-
-await client.agent_register({
-    "name": "agent.translator",
-    "mailbox": "agent.translator",
-    "payload": "Multilingual translation; EN/ZH/JA/KO",
-})
-```
-
-```go
-// Go
-client, _ := mq9.Connect("nats://localhost:4222")
-client.AgentRegister(ctx, mq9.AgentCard{
-    Name:    "agent.translator",
-    Mailbox: "agent.translator",
-    Payload: "Multilingual translation; EN/ZH/JA/KO",
-})
-```
-
-### agent_discover — find agents by capability
-
-```python
-# Python — semantic search
-agents = await client.agent_discover(semantic="translate Chinese to English", limit=5)
-
-# Python — keyword search
-agents = await client.agent_discover(text="translator", limit=10)
-```
-
-```go
-// Go
-agents, _ := client.AgentDiscover(ctx, mq9.DiscoverOptions{
-    Semantic: "translate Chinese to English",
-    Limit:    5,
-})
-```
-
-Each returned agent has a `name` and `mailbox` field. Send directly to the `mailbox`.
-
-### mailbox_create — create a persistent address
-
-```python
-# Python
 address = await client.mailbox_create(name="agent.inbox", ttl=3600)
 ```
 
 ```go
 // Go
+client, _ := mq9.Connect("nats://localhost:4222")
 address, _ := client.MailboxCreate(ctx, "agent.inbox", 3600)
 ```
 
@@ -171,7 +108,7 @@ const address = await client.mailboxCreate({ name: "agent.inbox", ttl: 3600 });
 - `name = ""` (Python: `None`, Go: `""`) — broker auto-generates the address.
 - `ttl = 0` — mailbox never expires.
 
-### send — send a message
+### Send a message
 
 ```python
 # Python — with priority and options
@@ -195,7 +132,7 @@ msgId, _ := client.Send(ctx, "agent.inbox", []byte(`{"task":"analyze"}`), mq9.Se
 })
 ```
 
-### fetch — pull messages (FETCH + ACK)
+### Fetch messages (pull + ACK)
 
 ```python
 # Python — stateful consumption
@@ -222,7 +159,7 @@ ACK the **last `msg_id` in the batch** — one call confirms the whole batch. Th
 
 **Stateless fetch** — omit `group_name`. Each call is independent; no offset is recorded. Use for one-off reads and inspection.
 
-### consume — continuous consumption loop
+### Continuous consumption loop
 
 Use `consume()` for an automatic poll-and-process loop:
 
@@ -256,10 +193,20 @@ await consumer.stop();
 - Handler throws / returns error → message **not ACKed**, `errorHandler` called, loop continues.
 - `consumer.stop()` drains the current batch and exits cleanly.
 
-### agent_report and agent_unregister
+### Agent registry
 
 ```python
-# Report heartbeat while running
+# Register at startup
+await client.agent_register({
+    "name": "agent.translator",
+    "mailbox": "agent.translator",
+    "payload": "Multilingual translation; EN/ZH/JA/KO",
+})
+
+# Discover by semantic intent
+agents = await client.agent_discover(semantic="translate Chinese to English", limit=5)
+
+# Report heartbeat
 await client.agent_report({"name": "agent.translator", "report_info": "running"})
 
 # Unregister at shutdown
@@ -270,47 +217,7 @@ await client.agent_unregister("agent.translator")
 
 ## Common patterns
 
-### Dynamic agent discovery and dispatch
-
-Discover an agent by capability, then send a task to its mailbox. No hard-coded addresses.
-
-```python
-# Discover by semantic intent
-agents = await client.agent_discover(semantic="extract structured data from PDFs", limit=3)
-target = agents[0]
-
-# Send task directly to discovered agent's mailbox
-await client.send(target.mailbox, json.dumps({
-    "task": "extract",
-    "document": "report_q1.pdf",
-    "reply_to": my_reply_mailbox,
-}).encode())
-```
-
-### Async request-reply
-
-Agent A sends a request, then continues other work. Agent B processes at its own pace and replies to A's private reply mailbox.
-
-```bash
-# Agent A: create private reply mailbox
-nats request '$mq9.AI.MAILBOX.CREATE' '{"ttl":600}'
-# → {"mail_address":"reply.a1b2c3"}
-
-# Agent A: send request to Agent B with reply_to
-nats request '$mq9.AI.MSG.SEND.agent.b' '{
-  "request":"translate","text":"Hello world","lang":"fr","reply_to":"reply.a1b2c3"
-}'
-
-# Agent B: fetch its queue and reply
-nats request '$mq9.AI.MSG.FETCH.agent.b' '{"group_name":"b-worker","deliver":"earliest"}'
-nats request '$mq9.AI.MSG.SEND.reply.a1b2c3' '{"result":"Bonjour le monde"}'
-nats request '$mq9.AI.MSG.ACK.agent.b' '{"group_name":"b-worker","mail_address":"agent.b","msg_id":1}'
-
-# Agent A: FETCH reply whenever ready
-nats request '$mq9.AI.MSG.FETCH.reply.a1b2c3' '{"deliver":"earliest"}'
-```
-
-### Sub-agent result delivery
+### Sub-Agent result delivery
 
 Parent creates a private reply mailbox and shares it with the sub-agent at spawn time. Sub-agent deposits result. Parent FETCHes asynchronously — no polling, no shared state.
 
@@ -367,7 +274,7 @@ messages, _ := client.Fetch(ctx, "edge.agent", mq9.FetchOptions{
 
 ### Human-in-the-loop approval
 
-The human's client uses the exact same protocol as any agent — no webhooks, no routing middleware.
+The human's client uses the exact same protocol as any Agent — no webhooks, no routing middleware.
 
 ```typescript
 // Agent: send approval request to human's mailbox
@@ -386,16 +293,27 @@ const consumer = await client.consume(humanMailAddress, async (req) => {
 });
 ```
 
-### Capability-based routing
+### Async request-reply
 
-Use DISCOVER at runtime to route tasks to the right agent without hard-coding targets.
+Agent A asks Agent B a question, then continues other work. Agent B processes at its own pace and replies to A's private reply mailbox.
 
-```python
-async def route_task(task_description: str, payload: bytes):
-    agents = await client.agent_discover(semantic=task_description, limit=1)
-    if not agents:
-        raise RuntimeError(f"No agent found for: {task_description}")
-    await client.send(agents[0].mailbox, payload)
+```bash
+# Agent A: create private reply mailbox
+nats request '$mq9.AI.MAILBOX.CREATE' '{"ttl":600}'
+# → {"mail_address":"reply.a1b2c3"}
+
+# Agent A: send request to Agent B with reply_to
+nats request '$mq9.AI.MSG.SEND.agent.b' '{
+  "request":"translate","text":"Hello world","lang":"fr","reply_to":"reply.a1b2c3"
+}'
+
+# Agent B: fetch its queue and reply
+nats request '$mq9.AI.MSG.FETCH.agent.b' '{"group_name":"b-worker","deliver":"earliest"}'
+nats request '$mq9.AI.MSG.SEND.reply.a1b2c3' '{"result":"Bonjour le monde"}'
+nats request '$mq9.AI.MSG.ACK.agent.b' '{"group_name":"b-worker","mail_address":"agent.b","msg_id":1}'
+
+# Agent A: FETCH reply whenever ready
+nats request '$mq9.AI.MSG.FETCH.reply.a1b2c3' '{"deliver":"earliest"}'
 ```
 
 ---
@@ -412,14 +330,14 @@ pip install langchain-mq9
 
 | Tool | Operation |
 | ---- | --------- |
-| `agent_register` | Register this agent with capabilities |
-| `agent_discover` | Find agents by text or semantic search |
 | `create_mailbox` | Create a private mailbox |
 | `send_message` | Send a message with priority |
 | `fetch_messages` | Pull messages (FETCH + ACK model) |
 | `ack_messages` | Advance consumer group offset |
 | `query_messages` | Inspect mailbox read-only |
 | `delete_message` | Delete a specific message |
+| `agent_register` | Register this agent with capabilities |
+| `agent_discover` | Find agents by text or semantic search |
 
 **LangChain:**
 
@@ -434,7 +352,7 @@ tools = toolkit.get_tools()
 llm = ChatOpenAI(model="gpt-4o")
 agent = create_tool_calling_agent(llm, tools, prompt)
 executor = AgentExecutor(agent=agent, tools=tools)
-result = executor.invoke({"input": "Discover all registered agents and send a task to the translator"})
+result = executor.invoke({"input": "Create a mailbox and send me a task summary"})
 ```
 
 **LangGraph:**
@@ -445,7 +363,7 @@ from langchain_mq9 import Mq9Toolkit
 
 toolkit = Mq9Toolkit(server="nats://localhost:4222")
 app = create_react_agent(llm, toolkit.get_tools())
-result = await app.ainvoke({"messages": [("human", "Find an agent that can summarize PDFs")]})
+result = await app.ainvoke({"messages": [("human", "Discover all registered agents")]})
 ```
 
 **Manual tool usage (no LLM):**
@@ -453,7 +371,6 @@ result = await app.ainvoke({"messages": [("human", "Find an agent that can summa
 ```python
 tools_by_name = {t.name: t for t in toolkit.get_tools()}
 
-agents = await tools_by_name["agent_discover"]._arun(semantic="translation", limit=3)
 address = await tools_by_name["create_mailbox"]._arun(ttl=300)
 await tools_by_name["send_message"]._arun(mail_address=address, content="hello")
 result = await tools_by_name["fetch_messages"]._arun(mail_address=address, group_name="workers")
@@ -475,13 +392,13 @@ http://<admin-server>:<port>/mcp
 
 All protocol responses include an `error` field. An empty string means success.
 
-| Error message | Cause |
-| ------------- | ----- |
-| `mailbox xxx already exists` | CREATE called with a name that already exists |
-| `mailbox not found` | Mailbox does not exist or has expired |
-| `message not found` | The specified `msg_id` does not exist or has expired |
-| `invalid mail_address` | Format is invalid (uppercase, hyphens, etc.) |
-| `agent not found` | UNREGISTER or REPORT called with unknown Agent name |
+| Error message                | Cause                                                 |
+| ---------------------------- | ----------------------------------------------------- |
+| `mailbox xxx already exists` | CREATE called with a name that already exists         |
+| `mailbox not found`          | Mailbox does not exist or has expired                 |
+| `message not found`          | The specified `msg_id` does not exist or has expired  |
+| `invalid mail_address`       | Format is invalid (uppercase, hyphens, etc.)          |
+| `agent not found`            | UNREGISTER or REPORT called with unknown Agent name   |
 
 SDK exceptions: all SDKs throw/return `Mq9Error` for non-empty `error` responses.
 
@@ -522,15 +439,15 @@ Scale horizontally when a single node is not enough. Agents use the same SDK —
 
 ## Pattern reference
 
-| Scenario | Key feature |
-| -------- | ----------- |
-| Dynamic routing | AGENT.DISCOVER + send to returned mailbox |
-| Capability registry | AGENT.REGISTER + AGENT.DISCOVER |
-| Point-to-point | Private mailbox + FETCH + ACK |
-| Competing workers | Shared `group_name` across workers |
-| Request-reply | Private reply mailbox + `reply_to` |
-| Offline delivery | Store-first, FETCH on reconnect |
-| Cloud-to-edge | Priority ordering on reconnect |
-| Human-in-the-loop | Same protocol for humans and Agents |
+| Scenario               | Key feature                             |
+| ---------------------- | --------------------------------------- |
+| Point-to-point         | Private mailbox + FETCH + ACK           |
+| Competing workers      | Shared `group_name` across workers      |
+| Broadcast              | Named public mailbox, multiple fetchers |
+| Request-reply          | Private reply mailbox + `reply_to`      |
+| Offline delivery       | Store-first, FETCH on reconnect         |
+| Capability discovery   | AGENT.REGISTER + AGENT.DISCOVER         |
+| Cloud-to-edge          | Priority ordering on reconnect          |
+| Human-in-the-loop      | Same protocol for humans and Agents     |
 
-*See [What](/what) for design rationale. See [For Agent](/for-agent) for the wire protocol reference.*
+*See [What](/what) for design rationale. See [For Agent](/for-agent) for the Agent protocol perspective.*
