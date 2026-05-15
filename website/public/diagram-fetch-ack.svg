@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 300" width="920" height="300" font-family="Inter,-apple-system,BlinkMacSystemFont,sans-serif">
+  <defs>
+    <marker id="arr-blue" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arr-blue-rev" markerWidth="9" markerHeight="9" refX="1" refY="4.5" orient="auto">
+      <path d="M9,0 L9,9 L0,4.5 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arr-slate" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#64748b"/>
+    </marker>
+    <marker id="arr-green" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#16a34a"/>
+    </marker>
+    <marker id="arr-orange" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#ea580c"/>
+    </marker>
+  </defs>
+
+  <!-- ── Step labels row ── -->
+  <text x="120" y="24" text-anchor="middle" font-size="11" fill="#94a3b8" font-weight="600">① FETCH</text>
+  <text x="370" y="24" text-anchor="middle" font-size="11" fill="#94a3b8" font-weight="600">② messages returned</text>
+  <text x="620" y="24" text-anchor="middle" font-size="11" fill="#94a3b8" font-weight="600">③ process</text>
+  <text x="120" y="250" text-anchor="middle" font-size="11" fill="#94a3b8" font-weight="600">⑤ loop</text>
+  <text x="370" y="250" text-anchor="middle" font-size="11" fill="#94a3b8" font-weight="600">④ ACK</text>
+
+  <!-- ── Agent box ── -->
+  <rect x="20" y="80" width="140" height="70" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="90" y="110" text-anchor="middle" font-size="14" font-weight="700" fill="#1e293b">Agent</text>
+  <text x="90" y="130" text-anchor="middle" font-size="12" fill="#64748b">consumer</text>
+
+  <!-- ── Broker box ── -->
+  <rect x="280" y="60" width="180" height="110" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="370" y="92" text-anchor="middle" font-size="14" font-weight="700" fill="#1e40af">mq9 Broker</text>
+  <text x="370" y="114" text-anchor="middle" font-size="12" fill="#3b82f6">mailbox storage</text>
+  <text x="370" y="134" text-anchor="middle" font-size="12" fill="#3b82f6">offset tracking</text>
+  <text x="370" y="154" text-anchor="middle" font-size="12" fill="#3b82f6">priority ordering</text>
+
+  <!-- ── Process box ── -->
+  <rect x="570" y="80" width="140" height="70" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="640" y="110" text-anchor="middle" font-size="14" font-weight="700" fill="#15803d">Process</text>
+  <text x="640" y="130" text-anchor="middle" font-size="12" fill="#16a34a">handle message</text>
+
+  <!-- ── Offset advance box ── -->
+  <rect x="280" y="200" width="180" height="48" rx="6" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5"/>
+  <text x="370" y="221" text-anchor="middle" font-size="12" fill="#c2410c" font-weight="600">broker advances offset</text>
+  <text x="370" y="239" text-anchor="middle" font-size="11" fill="#ea580c">next FETCH resumes here</text>
+
+  <!-- Arrow 1: Agent → Broker  FETCH (top lane y=96) -->
+  <line x1="162" y1="96" x2="278" y2="96" stroke="#3b82f6" stroke-width="1.8" marker-end="url(#arr-blue)"/>
+
+  <!-- Arrow 2: Broker → Agent  messages returned (bottom lane y=138), dashed -->
+  <line x1="280" y1="138" x2="164" y2="138" stroke="#64748b" stroke-width="1.5" stroke-dasharray="6,4" marker-end="url(#arr-slate)"/>
+  <rect x="188" y="143" width="128" height="20" rx="4" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="252" y="157" text-anchor="middle" font-size="11" fill="#475569">in priority order</text>
+
+  <!-- Arrow 3: Agent → Process  (separate lane y=115) -->
+  <line x1="162" y1="115" x2="568" y2="115" stroke="#16a34a" stroke-width="1.8" marker-end="url(#arr-green)"/>
+
+  <!-- Arrow 4: Agent → Broker  ACK (below messages lane, y=162) -->
+  <line x1="162" y1="162" x2="278" y2="162" stroke="#ea580c" stroke-width="1.8" marker-end="url(#arr-orange)"/>
+  <rect x="188" y="167" width="54" height="20" rx="4" fill="white" stroke="#fed7aa" stroke-width="1"/>
+  <text x="215" y="181" text-anchor="middle" font-size="12" fill="#ea580c" font-weight="700">ACK</text>
+
+  <!-- Arrow 5: Broker → offset box -->
+  <line x1="370" y1="172" x2="370" y2="198" stroke="#ea580c" stroke-width="1.5" marker-end="url(#arr-orange)"/>
+
+  <!-- Loop dashed: offset box left → down → agent bottom → up back -->
+  <path d="M 280 224 L 90 224 L 90 152" stroke="#3b82f6" stroke-width="1.3" fill="none" stroke-dasharray="6,4" marker-end="url(#arr-blue)"/>
+
+  <!-- Arrow labels -->
+  <rect x="42" y="80" width="54" height="20" rx="4" fill="white" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="69" y="94" text-anchor="middle" font-size="12" fill="#3b82f6" font-weight="700">FETCH</text>
+
+  <rect x="476" y="99" width="72" height="20" rx="4" fill="white" stroke="#bbf7d0" stroke-width="1"/>
+  <text x="512" y="113" text-anchor="middle" font-size="12" fill="#16a34a" font-weight="700">process</text>
+
+  <rect x="42" y="224" width="84" height="20" rx="4" fill="white" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="84" y="238" text-anchor="middle" font-size="11" fill="#3b82f6">next FETCH</text>
+</svg>

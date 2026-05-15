@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" width="960" height="500" font-family="Inter,-apple-system,BlinkMacSystemFont,sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#64748b"/>
+    </marker>
+    <marker id="arr-blue" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arr-blue-rev" markerWidth="9" markerHeight="9" refX="1" refY="4.5" orient="auto">
+      <path d="M9,0 L9,9 L0,4.5 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arr-slate" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <!-- ═══════════════ SECTION LABELS ═══════════════ -->
+  <text x="130" y="22" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="1">SDK LAYER</text>
+  <text x="510" y="22" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="1">BROKER CLUSTER</text>
+  <text x="860" y="22" text-anchor="middle" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="1">STORAGE</text>
+
+  <!-- ═══════════════ SDK COLUMN ═══════════════ -->
+  <!-- SDK group background -->
+  <rect x="20" y="36" width="220" height="420" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+
+  <!-- SDK language cards -->
+  <!-- Python -->
+  <rect x="36" y="56" width="188" height="44" rx="6" fill="white" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="74" y="75" font-size="13" font-weight="600" fill="#1e293b">Python</text>
+  <text x="74" y="92" font-size="11" fill="#64748b">pip install mq9</text>
+  <rect x="40" y="62" width="26" height="26" rx="4" fill="#fef3c7"/>
+  <text x="53" y="79" text-anchor="middle" font-size="13">🐍</text>
+
+  <!-- JavaScript -->
+  <rect x="36" y="112" width="188" height="44" rx="6" fill="white" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="74" y="131" font-size="13" font-weight="600" fill="#1e293b">JavaScript</text>
+  <text x="74" y="148" font-size="11" fill="#64748b">npm install mq9</text>
+  <rect x="40" y="118" width="26" height="26" rx="4" fill="#fef9c3"/>
+  <text x="53" y="135" text-anchor="middle" font-size="13">JS</text>
+
+  <!-- Go -->
+  <rect x="36" y="168" width="188" height="44" rx="6" fill="white" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="74" y="187" font-size="13" font-weight="600" fill="#1e293b">Go</text>
+  <text x="74" y="204" font-size="11" fill="#64748b">go get robustmq/mq9/go</text>
+  <rect x="40" y="174" width="26" height="26" rx="4" fill="#e0f2fe"/>
+  <text x="53" y="191" text-anchor="middle" font-size="12" fill="#0369a1" font-weight="700">Go</text>
+
+  <!-- Rust -->
+  <rect x="36" y="224" width="188" height="44" rx="6" fill="white" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="74" y="243" font-size="13" font-weight="600" fill="#1e293b">Rust</text>
+  <text x="74" y="260" font-size="11" fill="#64748b">cargo add mq9</text>
+  <rect x="40" y="230" width="26" height="26" rx="4" fill="#fff7ed"/>
+  <text x="53" y="247" text-anchor="middle" font-size="12" fill="#c2410c" font-weight="700">Rs</text>
+
+  <!-- Java -->
+  <rect x="36" y="280" width="188" height="44" rx="6" fill="white" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="74" y="299" font-size="13" font-weight="600" fill="#1e293b">Java</text>
+  <text x="74" y="316" font-size="11" fill="#64748b">io.mq9:mq9</text>
+  <rect x="40" y="286" width="26" height="26" rx="4" fill="#fce7f3"/>
+  <text x="53" y="303" text-anchor="middle" font-size="12" fill="#be185d" font-weight="700">Jv</text>
+
+  <!-- C# -->
+  <rect x="36" y="336" width="188" height="44" rx="6" fill="white" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="74" y="355" font-size="13" font-weight="600" fill="#1e293b">C#</text>
+  <text x="74" y="372" font-size="11" fill="#64748b">dotnet add package mq9</text>
+  <rect x="40" y="342" width="26" height="26" rx="4" fill="#f3e8ff"/>
+  <text x="53" y="359" text-anchor="middle" font-size="12" fill="#7c3aed" font-weight="700">C#</text>
+
+  <!-- Protocol note -->
+  <rect x="36" y="396" width="188" height="44" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.2"/>
+  <text x="130" y="415" text-anchor="middle" font-size="12" font-weight="600" fill="#1e40af">NATS protocol</text>
+  <text x="130" y="432" text-anchor="middle" font-size="11" fill="#3b82f6">$mq9.AI.* subjects</text>
+
+  <!-- ═══════════════ ARROWS SDK → BROKER ═══════════════ -->
+  <line x1="242" y1="180" x2="330" y2="180" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr-blue)"/>
+  <line x1="242" y1="220" x2="330" y2="220" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr-blue)"/>
+  <line x1="242" y1="260" x2="330" y2="260" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr-blue)"/>
+  <!-- Response arrows back -->
+  <line x1="330" y1="195" x2="242" y2="195" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#arr-slate)"/>
+  <line x1="330" y1="235" x2="242" y2="235" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#arr-slate)"/>
+  <line x1="330" y1="275" x2="242" y2="275" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#arr-slate)"/>
+
+  <!-- ═══════════════ BROKER CLUSTER ═══════════════ -->
+  <!-- Cluster background -->
+  <rect x="330" y="36" width="400" height="420" rx="10" fill="#f0f9ff" stroke="#7dd3fc" stroke-width="1.5"/>
+  <text x="530" y="58" text-anchor="middle" font-size="12" font-weight="600" fill="#0369a1">Single binary · stateless compute</text>
+
+  <!-- Broker node 1 (primary) -->
+  <rect x="356" y="72" width="160" height="130" rx="8" fill="white" stroke="#38bdf8" stroke-width="1.8"/>
+  <text x="436" y="95" text-anchor="middle" font-size="13" font-weight="700" fill="#0c4a6e">Broker Node 1</text>
+  <line x1="366" y1="104" x2="506" y2="104" stroke="#e0f2fe" stroke-width="1"/>
+  <text x="436" y="120" text-anchor="middle" font-size="11" fill="#0369a1">Protocol Parser</text>
+  <text x="436" y="138" text-anchor="middle" font-size="11" fill="#0369a1">Registry Handler</text>
+  <text x="436" y="156" text-anchor="middle" font-size="11" fill="#0369a1">Mailbox Handler</text>
+  <text x="436" y="174" text-anchor="middle" font-size="11" fill="#0369a1">Priority Scheduler</text>
+
+  <!-- Broker node 2 -->
+  <rect x="544" y="72" width="160" height="130" rx="8" fill="white" stroke="#38bdf8" stroke-width="1.8"/>
+  <text x="624" y="95" text-anchor="middle" font-size="13" font-weight="700" fill="#0c4a6e">Broker Node 2</text>
+  <line x1="554" y1="104" x2="694" y2="104" stroke="#e0f2fe" stroke-width="1"/>
+  <text x="624" y="120" text-anchor="middle" font-size="11" fill="#0369a1">Protocol Parser</text>
+  <text x="624" y="138" text-anchor="middle" font-size="11" fill="#0369a1">Registry Handler</text>
+  <text x="624" y="156" text-anchor="middle" font-size="11" fill="#0369a1">Mailbox Handler</text>
+  <text x="624" y="174" text-anchor="middle" font-size="11" fill="#0369a1">Priority Scheduler</text>
+
+  <!-- Broker node 3 (dashed = scale-out) -->
+  <rect x="356" y="224" width="160" height="90" rx="8" fill="white" stroke="#7dd3fc" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="436" y="254" text-anchor="middle" font-size="13" font-weight="700" fill="#0c4a6e">Broker Node 3</text>
+  <text x="436" y="276" text-anchor="middle" font-size="11" fill="#0369a1">horizontal scale-out</text>
+  <text x="436" y="294" text-anchor="middle" font-size="11" fill="#38bdf8">transparent to SDK</text>
+
+  <!-- Broker node N -->
+  <rect x="544" y="224" width="160" height="90" rx="8" fill="white" stroke="#7dd3fc" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="624" y="254" text-anchor="middle" font-size="13" font-weight="700" fill="#0c4a6e">Broker Node N</text>
+  <text x="624" y="276" text-anchor="middle" font-size="11" fill="#0369a1">add nodes live</text>
+  <text x="624" y="294" text-anchor="middle" font-size="11" fill="#38bdf8">no downtime</text>
+
+  <!-- Inter-node sync line -->
+  <line x1="516" y1="137" x2="544" y2="137" stroke="#7dd3fc" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="516" y1="270" x2="544" y2="270" stroke="#7dd3fc" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Cluster metadata / placement service -->
+  <rect x="356" y="336" width="348" height="50" rx="7" fill="#e0f2fe" stroke="#7dd3fc" stroke-width="1.2"/>
+  <text x="530" y="358" text-anchor="middle" font-size="12" font-weight="600" fill="#0369a1">Meta Service (Raft)</text>
+  <text x="530" y="376" text-anchor="middle" font-size="11" fill="#0369a1">cluster membership · placement · leader election</text>
+
+  <!-- Arrow: nodes → meta -->
+  <line x1="436" y1="316" x2="436" y2="334" stroke="#7dd3fc" stroke-width="1.2" marker-end="url(#arr-blue)"/>
+  <line x1="624" y1="316" x2="624" y2="334" stroke="#7dd3fc" stroke-width="1.2" marker-end="url(#arr-blue)"/>
+
+  <!-- Scale-out label -->
+  <rect x="356" y="400" width="348" height="38" rx="6" fill="white" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="530" y="416" text-anchor="middle" font-size="11" fill="#1e40af">Agents connect to any node · consistent routing</text>
+  <text x="530" y="430" text-anchor="middle" font-size="11" fill="#1e40af">Scale by adding nodes · SDK API unchanged</text>
+
+  <!-- ═══════════════ ARROWS BROKER → STORAGE ═══════════════ -->
+  <line x1="732" y1="180" x2="816" y2="180" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="732" y1="260" x2="816" y2="260" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ═══════════════ STORAGE COLUMN ═══════════════ -->
+  <rect x="816" y="36" width="128" height="420" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+
+  <rect x="830" y="56" width="100" height="64" rx="6" fill="white" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="880" y="78" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">Registry</text>
+  <text x="880" y="95" text-anchor="middle" font-size="11" fill="#64748b">AgentCards</text>
+  <text x="880" y="110" text-anchor="middle" font-size="11" fill="#64748b">vector index</text>
+
+  <rect x="830" y="136" width="100" height="64" rx="6" fill="white" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="880" y="158" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">Mailboxes</text>
+  <text x="880" y="175" text-anchor="middle" font-size="11" fill="#64748b">messages</text>
+  <text x="880" y="191" text-anchor="middle" font-size="11" fill="#64748b">offsets · TTL</text>
+
+  <rect x="830" y="216" width="100" height="64" rx="6" fill="white" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="880" y="238" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">Sessions</text>
+  <text x="880" y="255" text-anchor="middle" font-size="11" fill="#64748b">consumer</text>
+  <text x="880" y="271" text-anchor="middle" font-size="11" fill="#64748b">groups</text>
+
+  <rect x="830" y="296" width="100" height="64" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.2" stroke-dasharray="5,3"/>
+  <text x="880" y="318" text-anchor="middle" font-size="12" font-weight="600" fill="#94a3b8">S3 Tiering</text>
+  <text x="880" y="335" text-anchor="middle" font-size="11" fill="#94a3b8">cold archive</text>
+  <text x="880" y="351" text-anchor="middle" font-size="11" fill="#94a3b8">(roadmap)</text>
+
+  <rect x="830" y="376" width="100" height="64" rx="6" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.2"/>
+  <text x="880" y="398" text-anchor="middle" font-size="12" font-weight="600" fill="#1e40af">Pluggable</text>
+  <text x="880" y="415" text-anchor="middle" font-size="11" fill="#3b82f6">Memory</text>
+  <text x="880" y="431" text-anchor="middle" font-size="11" fill="#3b82f6">RocksDB</text>
+</svg>

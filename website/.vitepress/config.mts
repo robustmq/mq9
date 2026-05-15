@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'mq9',
   titleTemplate: ':title — mq9',
-  description: 'Deploy once. Every Agent gets a mailbox. Send to any Agent — online or offline.',
+  description: 'Agent registration, discovery, and reliable async messaging in one broker — designed to scale to millions of agents.',
   base: '/',
   cleanUrls: true,
   appearance: 'force-light',
@@ -14,14 +14,16 @@ export default defineConfig({
     ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
     ['link', { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&display=swap' }],
     ['meta', { name: 'author', content: 'mq9' }],
-    ['meta', { name: 'keywords', content: 'mq9, AI agent messaging, agent communication, async messaging, NATS, agent mailbox, multi-agent system' }],
+    ['meta', { name: 'keywords', content: 'mq9, agent registry, agent discovery, AI agent messaging, async messaging, NATS, agent mailbox, multi-agent system, A2A, AgentCard, reliable messaging' }],
     ['meta', { name: 'robots', content: 'index, follow' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: 'mq9' }],
-    ['meta', { property: 'og:title', content: 'mq9 — A message broker for AI Agents.' }],
-    ['meta', { property: 'og:description', content: 'Deploy once. Every Agent gets a mailbox. Send to any Agent — online or offline.' }],
+    ['meta', { property: 'og:title', content: 'mq9 — Agent Registry + Reliable Async Messaging' }],
+    ['meta', { property: 'og:description', content: 'Agent registration, discovery, and reliable async messaging in one broker — designed to scale to millions of agents.' }],
     ['meta', { property: 'og:url', content: 'https://mq9.robustmq.com' }],
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:title', content: 'mq9 — Agent Registry + Reliable Async Messaging' }],
+    ['meta', { name: 'twitter:description', content: 'Agent registration, discovery, and reliable async messaging in one broker — designed to scale to millions of agents.' }],
     ['link', { rel: 'canonical', href: 'https://mq9.robustmq.com' }],
     ['script', { charset: 'UTF-8', id: 'LA_COLLECT', src: '//sdk.51.la/js-sdk-pro.min.js' }],
     ['script', {}, `LA.init({id:"3PUlhxY3LHemHVJk",ck:"3PUlhxY3LHemHVJk",autoTrack:true,hashMode:true})`],
@@ -40,18 +42,6 @@ export default defineConfig({
           { text: 'RobustMQ', link: 'https://github.com/robustmq/robustmq' },
         ],
         sidebar: {
-          '/sdk/': [
-            {
-              text: 'SDK',
-              items: [
-                { text: 'Python', link: '/sdk/python' },
-                { text: 'JavaScript', link: '/sdk/javascript' },
-                { text: 'Go', link: '/sdk/go' },
-                { text: 'Rust', link: '/sdk/rust' },
-                { text: 'Java', link: '/sdk/java' },
-              ],
-            },
-          ],
           '/docs/': [
             {
               text: 'Getting Started',
@@ -65,6 +55,7 @@ export default defineConfig({
             {
               text: 'Deep Dives',
               items: [
+                { text: 'Architecture', link: '/docs/architecture' },
                 { text: 'Features', link: '/docs/features' },
                 { text: 'Protocol', link: '/docs/protocol' },
                 { text: 'Scenarios', link: '/docs/scenarios' },
@@ -72,9 +63,18 @@ export default defineConfig({
               ],
             },
             {
+              text: 'SDK',
+              items: [
+                { text: 'Python', link: '/docs/sdk/python' },
+                { text: 'JavaScript', link: '/docs/sdk/javascript' },
+                { text: 'Go', link: '/docs/sdk/go' },
+                { text: 'Rust', link: '/docs/sdk/rust' },
+                { text: 'Java', link: '/docs/sdk/java' },
+              ],
+            },
+            {
               text: 'Integrations',
               items: [
-                { text: 'SDK Reference', link: '/docs/sdk/' },
                 { text: 'LangChain / LangGraph', link: '/docs/langchain' },
                 { text: 'MCP Server', link: '/docs/mcp' },
               ],
@@ -84,6 +84,8 @@ export default defineConfig({
               items: [
                 { text: 'FAQ', link: '/docs/faq' },
                 { text: 'Roadmap', link: '/docs/roadmap' },
+                { text: 'Registry Roadmap', link: '/docs/registry-roadmap' },
+                { text: 'Messaging Roadmap', link: '/docs/messaging-roadmap' },
               ],
             },
           ],
@@ -103,18 +105,6 @@ export default defineConfig({
           { text: 'RobustMQ', link: 'https://github.com/robustmq/robustmq' },
         ],
         sidebar: {
-          '/zh/sdk/': [
-            {
-              text: 'SDK',
-              items: [
-                { text: 'Python', link: '/zh/sdk/python' },
-                { text: 'JavaScript', link: '/zh/sdk/javascript' },
-                { text: 'Go', link: '/zh/sdk/go' },
-                { text: 'Rust', link: '/zh/sdk/rust' },
-                { text: 'Java', link: '/zh/sdk/java' },
-              ],
-            },
-          ],
           '/zh/docs/': [
             {
               text: '快速入门',
@@ -128,6 +118,7 @@ export default defineConfig({
             {
               text: '深入了解',
               items: [
+                { text: '系统架构', link: '/zh/docs/architecture' },
                 { text: '功能特性', link: '/zh/docs/features' },
                 { text: '协议规范', link: '/zh/docs/protocol' },
                 { text: '使用场景', link: '/zh/docs/scenarios' },
@@ -135,9 +126,18 @@ export default defineConfig({
               ],
             },
             {
+              text: 'SDK',
+              items: [
+                { text: 'Python', link: '/zh/docs/sdk/python' },
+                { text: 'JavaScript', link: '/zh/docs/sdk/javascript' },
+                { text: 'Go', link: '/zh/docs/sdk/go' },
+                { text: 'Rust', link: '/zh/docs/sdk/rust' },
+                { text: 'Java', link: '/zh/docs/sdk/java' },
+              ],
+            },
+            {
               text: '集成',
               items: [
-                { text: 'SDK 参考', link: '/zh/docs/sdk/' },
                 { text: 'LangChain / LangGraph', link: '/zh/docs/langchain' },
                 { text: 'MCP Server', link: '/zh/docs/mcp' },
               ],
@@ -147,6 +147,8 @@ export default defineConfig({
               items: [
                 { text: '常见问题', link: '/zh/docs/faq' },
                 { text: '路线图', link: '/zh/docs/roadmap' },
+                { text: '注册中心规划', link: '/zh/docs/registry-roadmap' },
+                { text: '通信规划', link: '/zh/docs/messaging-roadmap' },
               ],
             },
           ],

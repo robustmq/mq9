@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 320" width="900" height="320" font-family="'Inter','SF Pro Display',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#64748b"/>
+    </marker>
+    <marker id="arr-blue" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="arr-green" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#16a34a"/>
+    </marker>
+    <marker id="arr-amber" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L0,9 L9,4.5 z" fill="#d97706"/>
+    </marker>
+  </defs>
+
+  <!-- ── Agent A (left top) ── -->
+  <rect x="30" y="40" width="150" height="64" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="105" y="67" text-anchor="middle" font-size="14" font-weight="600" fill="#1e293b">Agent A</text>
+  <text x="105" y="87" text-anchor="middle" font-size="12" fill="#64748b">translator</text>
+  <text x="105" y="24" text-anchor="middle" font-size="11" fill="#94a3b8">① starts up</text>
+
+  <!-- ── Agent B (left bottom) ── -->
+  <rect x="30" y="210" width="150" height="64" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="105" y="237" text-anchor="middle" font-size="14" font-weight="600" fill="#1e293b">Agent B</text>
+  <text x="105" y="257" text-anchor="middle" font-size="12" fill="#64748b">orchestrator</text>
+  <text x="105" y="194" text-anchor="middle" font-size="11" fill="#94a3b8">② needs a translator</text>
+
+  <!-- ── mq9 Registry (center) ── -->
+  <rect x="360" y="110" width="180" height="80" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="450" y="140" text-anchor="middle" font-size="14" font-weight="600" fill="#1e40af">mq9 Registry</text>
+  <text x="450" y="160" text-anchor="middle" font-size="11" fill="#3b82f6">keyword + semantic</text>
+  <text x="450" y="176" text-anchor="middle" font-size="11" fill="#3b82f6">vector indexed</text>
+
+  <!-- ── Mailbox (right) ── -->
+  <rect x="700" y="110" width="170" height="64" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="785" y="137" text-anchor="middle" font-size="14" font-weight="600" fill="#15803d">Mailbox</text>
+  <text x="785" y="157" text-anchor="middle" font-size="12" fill="#16a34a">agent.translator</text>
+  <text x="785" y="94" text-anchor="middle" font-size="11" fill="#94a3b8">③ send &amp; fetch</text>
+
+  <!-- Arrow 1: Agent A → Registry (REGISTER) -->
+  <line x1="182" y1="70" x2="358" y2="138" stroke="#64748b" stroke-width="1.5" marker-end="url(#arr)"/>
+  <rect x="220" y="84" width="96" height="20" rx="4" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="268" y="98" text-anchor="middle" font-size="11" fill="#475569" font-weight="600">REGISTER</text>
+
+  <!-- Arrow 2: Agent B → Registry (DISCOVER) -->
+  <line x1="182" y1="238" x2="358" y2="196" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arr-blue)"/>
+  <rect x="220" y="212" width="90" height="20" rx="4" fill="white" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="265" y="226" text-anchor="middle" font-size="11" fill="#3b82f6" font-weight="600">DISCOVER</text>
+
+  <!-- Arrow 3: Registry → Agent B (matched agents, dashed) -->
+  <line x1="360" y1="180" x2="182" y2="248" stroke="#3b82f6" stroke-width="1.4" marker-end="url(#arr-blue)" stroke-dasharray="6,4"/>
+  <rect x="218" y="238" width="118" height="20" rx="4" fill="white" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="277" y="252" text-anchor="middle" font-size="11" fill="#3b82f6">matched agents</text>
+
+  <!-- Arrow 4: Agent B → Mailbox (SEND) -->
+  <line x1="540" y1="162" x2="698" y2="152" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arr-green)"/>
+  <rect x="578" y="146" width="78" height="20" rx="4" fill="white" stroke="#bbf7d0" stroke-width="1"/>
+  <text x="617" y="160" text-anchor="middle" font-size="11" fill="#16a34a" font-weight="600">SEND</text>
+
+  <!-- Arrow 5: Agent A → Mailbox (FETCH, dashed) -->
+  <line x1="182" y1="82" x2="698" y2="130" stroke="#d97706" stroke-width="1.4" marker-end="url(#arr-amber)" stroke-dasharray="6,4"/>
+  <rect x="440" y="86" width="74" height="20" rx="4" fill="white" stroke="#fde68a" stroke-width="1"/>
+  <text x="477" y="100" text-anchor="middle" font-size="11" fill="#d97706" font-weight="600">FETCH</text>
+</svg>

@@ -97,17 +97,33 @@
   color: var(--vp-c-text-2);
 }
 
-/* Code blocks */
+/* Code blocks — light background, dark text */
 .vp-code-group,
 div[class*='language-'] {
   border-radius: 8px !important;
   border: 1px solid var(--vp-c-divider) !important;
+  background: #f8fafc !important;
+}
+
+div[class*='language-'] pre,
+div[class*='language-'] pre code {
+  background: #f8fafc !important;
 }
 
 div[class*='language-'] code,
 div[class*='language-'] code span {
   font-size: 0.82rem;
-  color: #e5e5e5 !important;
+  color: #1e293b !important;
+}
+
+/* language label (top-right "bash", "python", etc.) */
+div[class*='language-'] > span.lang {
+  color: #64748b !important;
+}
+
+/* copy button */
+div[class*='language-'] > button.copy {
+  color: #64748b !important;
 }
 
 /* Inline code */
