@@ -33,6 +33,13 @@
             <version>2.17.2</version>
         </dependency>
 
+        <!-- A2A spec types (AgentCard, Message, Task, events …) -->
+        <dependency>
+            <groupId>io.github.a2asdk</groupId>
+            <artifactId>a2a-java-sdk-spec</artifactId>
+            <version>0.2.5.Beta2</version>
+        </dependency>
+
         <!-- Test dependencies -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

@@ -78,6 +78,14 @@ export default defineConfig({
               items: [
                 { text: 'LangChain / LangGraph', link: '/docs/langchain' },
                 { text: 'MCP Server', link: '/docs/mcp' },
+                {
+                  text: 'A2A Protocol',
+                  items: [
+                    { text: 'Overview', link: '/docs/a2a' },
+                    { text: 'Python', link: '/docs/a2a/python' },
+                    { text: 'Java', link: '/docs/a2a/java' },
+                  ],
+                },
               ],
             },
             {
@@ -142,6 +150,14 @@ export default defineConfig({
               items: [
                 { text: 'LangChain / LangGraph', link: '/zh/docs/langchain' },
                 { text: 'MCP Server', link: '/zh/docs/mcp' },
+                {
+                  text: 'A2A 协议',
+                  items: [
+                    { text: '概述', link: '/zh/docs/a2a' },
+                    { text: 'Python', link: '/zh/docs/a2a/python' },
+                    { text: 'Java', link: '/zh/docs/a2a/java' },
+                  ],
+                },
               ],
             },
             {
